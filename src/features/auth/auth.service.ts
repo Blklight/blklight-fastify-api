@@ -1,0 +1,211 @@
+import { createId } from '@paralleldrive/cuid2';
+import { eq, and, lt } from 'drizzle-orm';
+import { db } from '../../db/index';
+import { users, sessions, NewUser, NewSession, User } from './auth.schema';
+import { profiles } from '../profiles/profiles.schema';
+import { hashPassword, verifyPassword } from '../../utils/crypto';
+import { ConflictError, UnauthorizedError } from '../../utils/errors';
+import { env } from '../../config/env';
+
+function parseExpiration(expiresIn: string): Date {
+  const match = expiresIn.match(/^(\d+)([smhd])$/);
+  if (!match || !match[1] || !match[2]) {
+    return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  }
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  const msMap: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+  const ms = msMap[unit] ?? 86400000;
+  return new Date(Date.now() + value * ms);
+}
+
+export interface RegisterUserResult {
+  user: User;
+  refreshToken: string;
+}
+
+export interface CreateUserResult {
+  user: User;
+}
+
+export interface LoginUserResult {
+  user: User;
+  refreshToken: string;
+}
+
+export async function registerUser(
+  email: string,
+  username: string,
+  password: string
+): Promise<RegisterUserResult> {
+  const { user } = await createUser(email, username, password);
+  const refreshToken = await createSession(user.id);
+  return { user, refreshToken };
+}
+
+async function createSession(userId: string): Promise<string> {
+  const now = new Date();
+
+  await db
+    .delete(sessions)
+    .where(
+      and(
+        eq(sessions.userId, userId),
+        lt(sessions.expiresAt, now)
+      )
+    );
+
+  const activeSessions = await db
+    .select({ id: sessions.id, createdAt: sessions.createdAt })
+    .from(sessions)
+    .where(eq(sessions.userId, userId));
+
+  if (activeSessions.length >= env.MAX_SESSIONS_PER_USER) {
+    const oldest = activeSessions.sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )[0];
+    if (oldest) {
+      await db.delete(sessions).where(eq(sessions.id, oldest.id));
+    }
+  }
+
+  const refreshToken = createId() + createId();
+  const expiresAt = parseExpiration(env.JWT_REFRESH_EXPIRES_IN);
+
+  const newSession: NewSession = {
+    id: createId(),
+    userId,
+    refreshToken,
+    expiresAt,
+    createdAt: now,
+  };
+
+  await db.insert(sessions).values(newSession);
+
+  return refreshToken;
+}
+
+export async function createUser(
+  email: string,
+  username: string,
+  password: string
+): Promise<CreateUserResult> {
+  const existingUser = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+  if (existingUser.length > 0) {
+    throw new ConflictError('Email already in use');
+  }
+
+  const existingUsername = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
+
+  if (existingUsername.length > 0) {
+    throw new ConflictError('Username already taken');
+  }
+
+  const { hash, salt } = hashPassword(password);
+  const userId = createId();
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    const newUser: NewUser = {
+      id: userId,
+      email,
+      username,
+      passwordHash: hash,
+      salt,
+      emailVerified: false,
+      role: 'user',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await tx.insert(users).values(newUser);
+
+    await tx.insert(profiles).values({
+      id: createId(),
+      userId,
+      username,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  const createdUser = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  return { user: createdUser[0]! };
+}
+
+export async function loginUser(
+  email: string,
+  password: string
+): Promise<LoginUserResult> {
+  const userRows = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+  if (userRows.length === 0) {
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
+  const user = userRows[0]!;
+
+  if (!user.passwordHash || !user.salt) {
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
+  const isValid = verifyPassword(password, user.passwordHash, user.salt);
+  if (!isValid) {
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
+  const refreshToken = await createSession(user.id);
+
+  return { user, refreshToken };
+}
+
+export async function refreshSession(refreshToken: string): Promise<User> {
+  const sessionRows = await db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.refreshToken, refreshToken))
+    .limit(1);
+
+  if (sessionRows.length === 0) {
+    throw new UnauthorizedError('Invalid refresh token');
+  }
+
+  const session = sessionRows[0]!;
+  if (session.expiresAt < new Date()) {
+    await db.delete(sessions).where(eq(sessions.id, session.id));
+    throw new UnauthorizedError('Refresh token expired');
+  }
+
+  const userRows = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, session.userId))
+    .limit(1);
+
+  if (userRows.length === 0) {
+    throw new UnauthorizedError('User not found');
+  }
+
+  return userRows[0]!;
+}
+
+export async function logout(refreshToken: string): Promise<void> {
+  await db.delete(sessions).where(eq(sessions.refreshToken, refreshToken));
+}
