@@ -1,5 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
-import { eq, and, lt } from 'drizzle-orm';
+import { eq, and, lt, isNull, gt, or } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { users, sessions, NewUser, NewSession, User } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
@@ -103,7 +103,15 @@ export async function createUser(
   const existingUsername = await db
     .select()
     .from(users)
-    .where(eq(users.username, username))
+    .where(
+      and(
+        eq(users.username, username),
+        or(
+          isNull(users.deletedAt),
+          gt(users.deletedAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+        )
+      )
+    )
     .limit(1);
 
   if (existingUsername.length > 0) {

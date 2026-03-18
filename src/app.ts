@@ -9,6 +9,7 @@ import scalar from '@scalar/fastify-api-reference';
 import { env } from './config/env';
 import { AppError, ValidationError } from './utils/errors';
 import authRoutes from './features/auth/auth.routes';
+import profileRoutes from './features/profiles/profiles.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -116,6 +117,7 @@ export async function buildApp() {
   });
 
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
+  await app.register(profileRoutes, { prefix: '/api/v1/profiles' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

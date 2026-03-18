@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 3 complete — auth feature implemented.
+Session 4 complete — profiles feature implemented.
 
 ## Tech Stack
 
@@ -31,7 +31,10 @@ src/
       auth.schema.ts - Drizzle schema: users + sessions tables
       auth.zod.ts    - Zod validation schemas
     profiles/
+      profiles.routes.ts - Profile route handlers
+      profiles.service.ts - Profile business logic
       profiles.schema.ts - Drizzle schema: profiles table
+      profiles.zod.ts    - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -175,9 +178,25 @@ API docs at http://localhost:3000/docs
 
 All auth routes return `{ data, error, message }` format. Refresh token is stored in httpOnly cookie.
 
+## Profile Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/profiles/:username | No | Get public profile |
+| GET | /api/v1/profiles/me | Yes | Get own profile |
+| PATCH | /api/v1/profiles/me | Yes | Update own profile |
+| DELETE | /api/v1/profiles/me | Yes | Delete own account |
+
+### Username Availability Rules
+- Username is blocked for 30 days after account deletion
+- When checking availability (register or update), the query excludes:
+  - Active users with the same username
+  - Deleted users where deleted_at > now() - interval '30 days'
+
 ## Next Steps
 
-- Profiles CRUD routes (Session 4)
+- Account feature (email/password update)
+- Articles feature
 - OAuth integration (GitHub, Google)
 - Email verification
 - Password reset flow

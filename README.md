@@ -65,6 +65,14 @@ GET /health
 | POST | /api/v1/auth/refresh | Refresh access token |
 | POST | /api/v1/auth/logout | Logout and invalidate session |
 
+### Profile Endpoints
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/profiles/:username | No | Get public profile |
+| GET | /api/v1/profiles/me | Yes | Get own profile |
+| PATCH | /api/v1/profiles/me | Yes | Update own profile |
+| DELETE | /api/v1/profiles/me | Yes | Delete own account |
+
 Full API documentation available at `GET /docs` via Scalar.
 
 ## Folder Structure
