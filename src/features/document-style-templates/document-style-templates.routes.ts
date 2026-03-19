@@ -1,0 +1,205 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { createStyleTemplateSchema } from './document-style-templates.zod';
+import { profiles } from '../profiles/profiles.schema';
+import { db } from '../../db/index';
+import { eq } from 'drizzle-orm';
+import {
+  createStyleTemplate,
+  getMyStyleTemplates,
+  deleteStyleTemplate,
+} from './document-style-templates.service';
+
+interface JwtPayload {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  }
+}
+
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: JwtPayload;
+    user: JwtPayload;
+  }
+}
+
+export default async function styleTemplateRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', async (request, reply) => {
+    await app.authenticate(request, reply);
+  });
+
+  app.get('/', {
+    schema: {
+      summary: 'Get my style templates',
+      tags: ['document-style-templates'],
+      querystring: {
+        type: 'object',
+        properties: {
+          type: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'array' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Querystring: { type?: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { type } = request.query;
+
+    const profileResult = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1);
+
+    if (profileResult.length === 0) {
+      return reply.code(404).send({
+        data: null,
+        error: { code: 'NOT_FOUND', message: 'Profile not found' },
+        message: 'Profile not found',
+      });
+    }
+
+    const authorId = profileResult[0]!.id;
+    const templates = await getMyStyleTemplates(authorId, type);
+
+    reply.send({
+      data: templates,
+      error: null,
+      message: 'Templates retrieved',
+    });
+  });
+
+  app.post('/', {
+    schema: {
+      summary: 'Create a style template',
+      tags: ['document-style-templates'],
+      body: {
+        type: 'object',
+        required: ['name', 'typography'],
+        properties: {
+          name: { type: 'string', minLength: 1, maxLength: 50 },
+          documentType: { type: ['string', 'null'] },
+          typography: { type: 'string', enum: ['sans', 'serif', 'mono'] },
+          paperStyle: { type: 'object' },
+          paperTexture: { type: 'object' },
+          documentHeader: { type: 'object' },
+          documentFooter: { type: 'object' },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { userId } = request.user;
+
+    const profileResult = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1);
+
+    if (profileResult.length === 0) {
+      return reply.code(404).send({
+        data: null,
+        error: { code: 'NOT_FOUND', message: 'Profile not found' },
+        message: 'Profile not found',
+      });
+    }
+
+    const authorId = profileResult[0]!.id;
+    const parsed = createStyleTemplateSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const template = await createStyleTemplate(authorId, parsed.data);
+
+    reply.code(201).send({
+      data: template,
+      error: null,
+      message: 'Template created',
+    });
+  });
+
+  app.delete('/:id', {
+    schema: {
+      summary: 'Delete a style template',
+      tags: ['document-style-templates'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+
+    const profileResult = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1);
+
+    if (profileResult.length === 0) {
+      return reply.code(404).send({
+        data: null,
+        error: { code: 'NOT_FOUND', message: 'Profile not found' },
+        message: 'Profile not found',
+      });
+    }
+
+    const authorId = profileResult[0]!.id;
+    await deleteStyleTemplate(authorId, id);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Template deleted',
+    });
+  });
+}

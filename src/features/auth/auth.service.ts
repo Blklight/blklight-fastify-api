@@ -3,7 +3,8 @@ import { eq, and, lt, isNull, gt, or } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { users, sessions, NewUser, NewSession, User } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
-import { hashPassword, verifyPassword } from '../../utils/crypto';
+import { signatures } from '../signatures/signatures.schema';
+import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError } from '../../utils/errors';
 import { env } from '../../config/env';
 
@@ -142,6 +143,18 @@ export async function createUser(
       username,
       createdAt: now,
       updatedAt: now,
+    });
+
+    const secret = generateSecret();
+    const userHash = generateUserHash(userId, email, now, secret);
+    const secretEncrypted = encryptSecret(secret);
+
+    await tx.insert(signatures).values({
+      id: createId(),
+      userId,
+      userHash,
+      secretEncrypted,
+      createdAt: now,
     });
   });
 

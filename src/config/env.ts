@@ -11,6 +11,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   CORS_ORIGIN: z.string().default('*'),
   MAX_SESSIONS_PER_USER: z.coerce.number().int().positive().default(5),
+  SIGNATURE_ENCRYPTION_KEY: z.string().min(64, 'SIGNATURE_ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
 });
 
 const parsed = envSchema.safeParse(process.env);

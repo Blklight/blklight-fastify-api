@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 4 complete — profiles feature implemented.
+Session 6 complete — documents feature implemented.
 
 ## Tech Stack
 
@@ -35,11 +35,24 @@ src/
       profiles.service.ts - Profile business logic
       profiles.schema.ts - Drizzle schema: profiles table
       profiles.zod.ts    - Zod validation schemas
+    signatures/
+      signatures.schema.ts - Drizzle schema: signatures table
+      signatures.service.ts - Document signing/verification service
+    documents/
+      documents.routes.ts - Document route handlers
+      documents.service.ts - Document business logic
+      documents.schema.ts - Drizzle schema: documents, document_styles, document_types
+      documents.zod.ts - Zod validation schemas
+    document-style-templates/
+      document-style-templates.routes.ts - Style template route handlers
+      document-style-templates.service.ts - Style template business logic
+      document-style-templates.schema.ts - Drizzle schema: document_style_templates
+      document-style-templates.zod.ts - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
   utils/
-    crypto.ts       - Password hashing utilities (pbkdf2Sync, 120k iterations)
+    crypto.ts       - Password hashing + document signing utilities
     errors.ts       - Custom error classes
   config/
     env.ts          - Environment variable validation with Zod
@@ -102,6 +115,69 @@ src/
 | created_at | timestamp | default now() |
 | updated_at | timestamp | default now() |
 
+### signatures (authorship identity)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | unique, foreign key → users.id |
+| user_hash | text | unique, public authorship identity |
+| secret_encrypted | text | AES-256-GCM encrypted per-user secret |
+| tx_hash | text | nullable, reserved for blockchain migration |
+| created_at | timestamp | default now() |
+
+### document_types (seeded on migration)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| name | text | unique (article, tutorial, contract, project, note) |
+| created_at | timestamp | default now() |
+
+### documents
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| author_id | text | foreign key → profiles.id |
+| type_id | text | foreign key → document_types.id |
+| status | text | 'draft' \| 'published' \| 'archived' |
+| title | text | not null |
+| abstract | text | nullable |
+| content | jsonb | nullable (TipTap JSON) |
+| cover_image_url | text | nullable |
+| slug | text | unique per author (author_id + slug) |
+| authorship | jsonb | set on publish, null while draft |
+| published_at | timestamp | nullable |
+| deleted_at | timestamp | nullable (soft delete) |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+### document_styles
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| document_id | text | unique, foreign key → documents.id |
+| typography | text | 'sans' \| 'serif' \| 'mono' |
+| paper_style | jsonb | nullable |
+| paper_texture | jsonb | nullable |
+| cover_settings | jsonb | nullable |
+| document_header | jsonb | nullable |
+| document_footer | jsonb | nullable |
+| document_signature | jsonb | nullable |
+| updated_at | timestamp | default now() |
+
+### document_style_templates
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| author_id | text | foreign key → profiles.id |
+| name | text | not null, max 50 |
+| document_type | text | nullable (null = applies to any type) |
+| typography | text | 'sans' \| 'serif' \| 'mono' |
+| paper_style | jsonb | nullable |
+| paper_texture | jsonb | nullable |
+| document_header | jsonb | nullable |
+| document_footer | jsonb | nullable |
+| created_at | timestamp | default now() |
+
 ## Available Scripts
 
 | Script | Description |
@@ -149,6 +225,18 @@ API docs at http://localhost:3000/docs
 - **ALWAYS** create users and profiles in the same DB transaction
 - **ONLY** store refresh tokens in httpOnly cookies, never in response body
 - **ALL** responses must follow `{ data, error, message }` standard
+- **NEVER** store raw secrets — always encrypt with AES-256-GCM before saving
+- **NEVER** expose secret_encrypted, user_hash raw, or tx_hash in API responses
+- **signDocument() and verifyDocument()** are the only entry points for article signing
+- **tx_hash** field is nullable and reserved for future blockchain migration
+- **Signatures remain accessible after account deletion** — they are permanent proof of authorship
+- **author_id in documents always references profiles.id** — never users.id
+- **documents and document_styles always created in the same transaction**
+- **slug is unique per author** — composite unique constraint on (author_id, slug)
+- **authorship jsonb only set on publish** — null while draft
+- **authorship.hmac enables cryptographic verification** via verifyDocument() from signatures.service.ts
+- **publishDocument() resolves profiles.id → users.id internally** before calling signDocument()
+- **Content edits on published documents reset authorship to null and status to draft** — requires re-publish
 
 ## Response Format
 
@@ -193,10 +281,45 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
   - Active users with the same username
   - Deleted users where deleted_at > now() - interval '30 days'
 
+## Document Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/documents/me | Yes | List my documents (paginated) |
+| POST | /api/v1/documents | Yes | Create document |
+| PATCH | /api/v1/documents/:id | Yes | Update document |
+| PATCH | /api/v1/documents/:id/publish | Yes | Publish document |
+| DELETE | /api/v1/documents/:id | Yes | Soft delete document |
+
+## Document Style Template Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/document-style-templates | Yes | List my templates |
+| POST | /api/v1/document-style-templates | Yes | Create template |
+| DELETE | /api/v1/document-style-templates/:id | Yes | Delete template |
+
+## Authorship JSONB Shape
+
+Set on publish, null while draft:
+```json
+{
+  "authorName": "string",
+  "username": "string",
+  "userHash": "string",
+  "documentHash": "string",
+  "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx",
+  "hmac": "string",
+  "signedAt": "ISO timestamp"
+}
+```
+
 ## Next Steps
 
-- Account feature (email/password update)
-- Articles feature
+- Tutorial exercises feature (Session 7)
+- Public document routes (GET /documents/:username/:slug)
+- Contract signatures integration
+- Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)
 - Email verification
 - Password reset flow

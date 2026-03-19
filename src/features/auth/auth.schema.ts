@@ -1,4 +1,5 @@
 import { pgTable, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+import '../signatures/signatures.schema';
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),

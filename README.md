@@ -73,6 +73,22 @@ GET /health
 | PATCH | /api/v1/profiles/me | Yes | Update own profile |
 | DELETE | /api/v1/profiles/me | Yes | Delete own account |
 
+### Document Endpoints
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/documents/me | Yes | List my documents (paginated) |
+| POST | /api/v1/documents | Yes | Create document |
+| PATCH | /api/v1/documents/:id | Yes | Update document |
+| PATCH | /api/v1/documents/:id/publish | Yes | Publish document |
+| DELETE | /api/v1/documents/:id | Yes | Soft delete document |
+
+### Document Style Template Endpoints
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/document-style-templates | Yes | List my templates |
+| POST | /api/v1/document-style-templates | Yes | Create template |
+| DELETE | /api/v1/document-style-templates/:id | Yes | Delete template |
+
 Full API documentation available at `GET /docs` via Scalar.
 
 ## Folder Structure
@@ -109,3 +125,4 @@ See `.env.example` for all required variables:
 - `LOG_LEVEL` — Logging level
 - `CORS_ORIGIN` — CORS origin (default: *)
 - `MAX_SESSIONS_PER_USER` — Max sessions per user (default: 5)
+- `SIGNATURE_ENCRYPTION_KEY` — AES-256-GCM encryption key (64 hex chars)
