@@ -94,13 +94,13 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
     schema: {
-      summary: 'Login with email and password',
+      summary: 'Login with email or username',
       tags: ['auth'],
       body: {
         type: 'object',
-        required: ['email', 'password'],
+        required: ['identifier', 'password'],
         properties: {
-          email: { type: 'string', format: 'email' },
+          identifier: { type: 'string', minLength: 1 },
           password: { type: 'string' },
         },
       },
@@ -137,8 +137,8 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const { email, password } = parsed.data;
-    const { user, refreshToken } = await loginUser(email, password);
+    const { identifier, password } = parsed.data;
+    const { user, refreshToken } = await loginUser(identifier, password);
 
     const accessToken = app.jwt.sign(
       { userId: user.id, email: user.email, role: user.role },

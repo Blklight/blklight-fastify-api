@@ -167,14 +167,26 @@ export async function createUser(
   return { user: createdUser[0]! };
 }
 
+/**
+ * Authenticate a user with email or username.
+ * @param identifier - Email address or username
+ * @param password - Account password
+ * @returns User object and refresh token
+ * @throws UnauthorizedError if credentials are invalid
+ */
 export async function loginUser(
-  email: string,
+  identifier: string,
   password: string
 ): Promise<LoginUserResult> {
+  const isEmail = identifier.includes('@');
+  const normalizedIdentifier = isEmail ? identifier.toLowerCase().trim() : identifier.trim();
+
+  const condition = isEmail ? eq(users.email, normalizedIdentifier) : eq(users.username, normalizedIdentifier);
+
   const userRows = await db
     .select()
     .from(users)
-    .where(eq(users.email, email))
+    .where(condition)
     .limit(1);
 
   if (userRows.length === 0) {

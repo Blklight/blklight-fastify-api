@@ -61,7 +61,7 @@ GET /health
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | /api/v1/auth/register | Register new user |
-| POST | /api/v1/auth/login | Login with credentials |
+| POST | /api/v1/auth/login | Login with email or username |
 | POST | /api/v1/auth/refresh | Refresh access token |
 | POST | /api/v1/auth/logout | Logout and invalidate session |
 

@@ -4,13 +4,13 @@ import { db } from '../../db/index';
 import { tutorialExercises, exerciseSubmissions, TutorialExercise } from './tutorial-exercises.schema';
 import { documents, documentTypes } from '../documents/documents.schema';
 import { profiles } from '../profiles/profiles.schema';
-import { executeCode } from '../../utils/sandbox';
+import { executeCode, type SupportedLanguage } from '../../utils/sandbox';
 import { NotFoundError, UnauthorizedError, ValidationError } from '../../utils/errors';
 import type { CreateExerciseInput, UpdateExerciseInput, SubmitAnswerInput } from './tutorial-exercises.zod';
 
 interface CodeExerciseData {
   prompt: string;
-  language: string;
+  language: SupportedLanguage;
   initialCode: string;
   expectedOutput: string;
 }
@@ -259,7 +259,8 @@ export async function submitAnswer(
     isCorrect = submission.answerIndex === correctIndex;
   } else {
     const expectedOutput = data.expectedOutput as string;
-    const output = await executeCode(submission.code);
+    const language = data.language as SupportedLanguage;
+    const output = await executeCode(submission.code, language);
     isCorrect = output.trim() === expectedOutput.trim();
   }
 

@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 7 complete — tutorial exercises implemented.
+Session 8 complete — corrections and improvements applied.
 
 ## Tech Stack
 
@@ -135,7 +135,7 @@ src/
 | Column | Type | Notes |
 |--------|------|-------|
 | id | text | CUID2, primary key |
-| name | text | unique (article, tutorial, contract, project, note) |
+| name | text | unique (article, tutorial, contract, project, page) |
 | created_at | timestamp | default now() |
 
 ### documents
@@ -266,10 +266,13 @@ API docs at http://localhost:3000/docs
 - **publishDocument() resolves profiles.id → users.id internally** before calling signDocument()
 - **Content edits on published documents reset authorship to null and status to draft** — requires re-publish
 - **correct_index and expected_output are NEVER returned to readers** — stripped from exercise responses
-- **Code exercises validated via node:vm with 3s timeout** — pure JavaScript only, no Node.js APIs
+- **Code exercises validated via node:vm with 3s timeout** — pure JavaScript and TypeScript (transpiled via esbuild)
+- **SupportedLanguage: 'javascript' | 'typescript'** — extensible for future languages without refactor
+- **Login identifier can be email (contains '@') or username** — detected by presence of '@' character
 - **exercise_submissions uses upsert** — one row per (user_id, exercise_id)
 - **attempts array appended on each submission** — never replaced
 - **quiz and code exercises use discriminated union Zod schemas** — discriminated on `type` field
+- **Never add language support to sandbox without adding to SupportedLanguage type first**
 
 ## Response Format
 
@@ -293,7 +296,7 @@ API docs at http://localhost:3000/docs
 | Method | Endpoint | Description | Rate Limit |
 |--------|----------|-------------|------------|
 | POST | /api/v1/auth/register | Register new user | 5/min |
-| POST | /api/v1/auth/login | Login with credentials | 10/min |
+| POST | /api/v1/auth/login | Login with email or username | 10/min |
 | POST | /api/v1/auth/refresh | Refresh access token | None |
 | POST | /api/v1/auth/logout | Logout and invalidate session | None |
 

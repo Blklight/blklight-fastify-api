@@ -118,7 +118,7 @@ function getDefaultStyles(typeName: string): Partial<NewDocumentStyle> {
     };
   }
 
-  if (typeName === 'note') {
+  if (typeName === 'page') {
     return {
       ...base,
       typography: 'mono',

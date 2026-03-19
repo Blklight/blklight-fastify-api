@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const codeExerciseDataSchema = z.object({
   prompt: z.string().min(1),
-  language: z.string().min(1),
+  language: z.enum(['javascript', 'typescript']),
   initialCode: z.string(),
   expectedOutput: z.string().min(1),
 });

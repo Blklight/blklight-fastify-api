@@ -96,7 +96,7 @@ Register a new user account.
 
 ### POST /api/v1/auth/login
 
-Login with credentials.
+Login with email or username.
 
 **Auth Required:** No
 
@@ -104,13 +104,21 @@ Login with credentials.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| email | string | Yes | Registered email |
+| identifier | string | Yes | Email address or username |
 | password | string | Yes | Account password |
 
 **Example Request:**
 ```json
 {
-  "email": "user@example.com",
+  "identifier": "user@example.com",
+  "password": "securepassword123"
+}
+```
+
+**Example Request (with username):**
+```json
+{
+  "identifier": "johndoe",
   "password": "securepassword123"
 }
 ```
@@ -376,7 +384,7 @@ Create a new document.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | title | string | Yes | 1-200 chars |
-| type | string | Yes | Document type (article, tutorial, contract, project, note) |
+| type | string | Yes | Document type (article, tutorial, contract, project, page) |
 | abstract | string | No | Max 500 chars |
 | content | object | No | TipTap JSON content |
 | coverImageUrl | string | No | Valid URL |
@@ -712,7 +720,7 @@ Get all exercises for a tutorial document. Answers are stripped from the respons
 }
 ```
 
-**Note:** `expectedOutput` and `correctIndex` are never returned to readers.
+**Note:** `expectedOutput` and `correctIndex` are never returned to readers. TypeScript is transpiled via esbuild before execution.
 
 **Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
 
@@ -736,7 +744,7 @@ Create a new exercise for a tutorial document.
 |-------|------|----------|-------------|
 | type | string | Yes | Must be "code" |
 | data.prompt | string | Yes | Exercise description |
-| data.language | string | Yes | Programming language (e.g., "javascript") |
+| data.language | string | Yes | Language: "javascript" or "typescript" |
 | data.initialCode | string | Yes | Starter code shown to user |
 | data.expectedOutput | string | Yes | Expected output for validation |
 
