@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 6 complete — documents feature implemented.
+Session 7 complete — tutorial exercises implemented.
 
 ## Tech Stack
 
@@ -48,12 +48,18 @@ src/
       document-style-templates.service.ts - Style template business logic
       document-style-templates.schema.ts - Drizzle schema: document_style_templates
       document-style-templates.zod.ts - Zod validation schemas
+    tutorial-exercises/
+      tutorial-exercises.routes.ts - Tutorial exercise route handlers
+      tutorial-exercises.service.ts - Tutorial exercise business logic
+      tutorial-exercises.schema.ts - Drizzle schema: tutorial_exercises, exercise_submissions
+      tutorial-exercises.zod.ts - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
   utils/
     crypto.ts       - Password hashing + document signing utilities
     errors.ts       - Custom error classes
+    sandbox.ts      - Code execution sandbox using node:vm
   config/
     env.ts          - Environment variable validation with Zod
   app.ts            - Fastify instance: plugins, hooks, error handler
@@ -178,6 +184,28 @@ src/
 | document_footer | jsonb | nullable |
 | created_at | timestamp | default now() |
 
+### tutorial_exercises
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| document_id | text | foreign key → documents.id |
+| type | text | 'code' \| 'quiz' |
+| data | jsonb | exercise data (shape varies by type) |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+### exercise_submissions
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| exercise_id | text | foreign key → tutorial_exercises.id |
+| attempts | jsonb | array of attempt objects |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+Unique constraint: (user_id, exercise_id)
+
 ## Available Scripts
 
 | Script | Description |
@@ -237,6 +265,11 @@ API docs at http://localhost:3000/docs
 - **authorship.hmac enables cryptographic verification** via verifyDocument() from signatures.service.ts
 - **publishDocument() resolves profiles.id → users.id internally** before calling signDocument()
 - **Content edits on published documents reset authorship to null and status to draft** — requires re-publish
+- **correct_index and expected_output are NEVER returned to readers** — stripped from exercise responses
+- **Code exercises validated via node:vm with 3s timeout** — pure JavaScript only, no Node.js APIs
+- **exercise_submissions uses upsert** — one row per (user_id, exercise_id)
+- **attempts array appended on each submission** — never replaced
+- **quiz and code exercises use discriminated union Zod schemas** — discriminated on `type` field
 
 ## Response Format
 
@@ -299,6 +332,46 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
 | POST | /api/v1/document-style-templates | Yes | Create template |
 | DELETE | /api/v1/document-style-templates/:id | Yes | Delete template |
 
+## Tutorial Exercises Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/documents/:id/exercises | Yes | List exercises for a document |
+| POST | /api/v1/documents/:id/exercises | Yes | Create exercise (document owner only) |
+| PATCH | /api/v1/exercises/:id | Yes | Update exercise (document owner only) |
+| DELETE | /api/v1/exercises/:id | Yes | Delete exercise (document owner only) |
+| POST | /api/v1/exercises/:id/submit | Yes | Submit answer to exercise |
+
+### Exercise Data JSONB Shape
+
+**code:**
+```json
+{
+  "prompt": "string",
+  "language": "string",
+  "initialCode": "string",
+  "expectedOutput": "string"
+}
+```
+
+**quiz:**
+```json
+{
+  "question": "string",
+  "options": ["string"],
+  "correctIndex": 0
+}
+```
+
+### Submission Attempt Shape
+```json
+{
+  "isCorrect": true,
+  "submittedAt": "ISO timestamp",
+  "codeSubmitted": "string | null"
+}
+```
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -316,9 +389,9 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Tutorial exercises feature (Session 7)
 - Public document routes (GET /documents/:username/:slug)
 - Contract signatures integration
+- Follows/likes feature
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)
 - Email verification
