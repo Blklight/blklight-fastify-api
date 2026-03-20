@@ -1,12 +1,14 @@
-import { eq, and, isNull, desc, lt, or, ilike, count } from 'drizzle-orm';
+import { eq, and, isNull, desc, lt, or, ilike, count, sql } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { documents, documentTypes, documentStyles, Document, NewDocument, NewDocumentStyle } from './documents.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { users } from '../auth/auth.schema';
+import { documentLikes } from '../likes/likes.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { getLikesCount } from '../likes/likes.service';
 import type { CreateDocumentInput, UpdateDocumentInput } from './documents.zod';
 import type { NewProfile } from '../profiles/profiles.schema';
 
@@ -491,6 +493,7 @@ export interface DocumentCard {
   authorship: {
     publicIdentifier: string;
   };
+  likesCount: number;
 }
 
 export interface AuthorFeedParams {
@@ -523,6 +526,10 @@ export interface DocumentFull {
     documentSignature: Record<string, unknown> | null;
   };
   authorship: Authorship;
+  likes: {
+    likesCount: number;
+    likedByMe: boolean | null;
+  };
   exercises?: unknown[];
 }
 
@@ -551,6 +558,8 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
     conditions.push(lt(documents.publishedAt, publishedAt));
   }
 
+  const likesSubquery = sql<number>`(SELECT COUNT(*) FROM document_likes WHERE document_id = ${documents.id})`;
+
   let query = db
     .select({
       id: documents.id,
@@ -564,13 +573,14 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
       displayName: profiles.displayName,
       avatarUrl: profiles.avatarUrl,
       authorship: documents.authorship,
+      likesCount: likesSubquery,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
     .innerJoin(users, eq(profiles.userId, users.id))
     .where(and(...conditions))
-    .orderBy(desc(documents.publishedAt), desc(documents.id))
+    .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
     .limit(limit + 1);
 
   if (params.q) {
@@ -588,6 +598,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
         displayName: profiles.displayName,
         avatarUrl: profiles.avatarUrl,
         authorship: documents.authorship,
+        likesCount: likesSubquery,
       })
       .from(documents)
       .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
@@ -602,7 +613,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
           )
         )
       )
-      .orderBy(desc(documents.publishedAt), desc(documents.id))
+      .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
       .limit(limit + 1) as typeof query;
   }
 
@@ -631,6 +642,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
       authorship: {
         publicIdentifier: authorship?.publicIdentifier ?? '',
       },
+      likesCount: Number(r.likesCount ?? 0),
     };
   });
 
@@ -679,7 +691,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
  * @returns Full document with style, authorship, and exercises if tutorial
  * @throws NotFoundError if document not found, deleted, or not published
  */
-export async function getPublicDocument(username: string, slug: string): Promise<DocumentFull> {
+export async function getPublicDocument(username: string, slug: string, userId?: string): Promise<DocumentFull> {
   const docResult = await db
     .select({
       id: documents.id,
@@ -716,6 +728,7 @@ export async function getPublicDocument(username: string, slug: string): Promise
   }
 
   const doc = docResult[0]!;
+  const likesData = await getLikesCount(doc.id, userId);
 
   const styleResult = await db
     .select()
@@ -757,6 +770,10 @@ export async function getPublicDocument(username: string, slug: string): Promise
       documentSignature: style.documentSignature as Record<string, unknown> | null,
     },
     authorship: doc.authorship as Authorship,
+    likes: {
+      likesCount: likesData.likesCount,
+      likedByMe: likesData.likedByMe,
+    },
   };
 
   if (doc.typeName === 'tutorial') {
@@ -809,6 +826,8 @@ export async function getAuthorPublicDocuments(username: string, params: AuthorF
     conditions.push(lt(documents.publishedAt, publishedAt));
   }
 
+  const likesSubquery = sql<number>`(SELECT COUNT(*) FROM document_likes WHERE document_id = ${documents.id})`;
+
   const results = await db
     .select({
       id: documents.id,
@@ -822,6 +841,7 @@ export async function getAuthorPublicDocuments(username: string, params: AuthorF
       displayName: profiles.displayName,
       avatarUrl: profiles.avatarUrl,
       authorship: documents.authorship,
+      likesCount: likesSubquery,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
@@ -853,6 +873,7 @@ export async function getAuthorPublicDocuments(username: string, params: AuthorF
       authorship: {
         publicIdentifier: authorship?.publicIdentifier ?? '',
       },
+      likesCount: Number(r.likesCount ?? 0),
     };
   });
 

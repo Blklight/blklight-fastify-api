@@ -13,6 +13,8 @@ import profileRoutes from './features/profiles/profiles.routes';
 import documentRoutes from './features/documents/documents.routes';
 import styleTemplateRoutes from './features/document-style-templates/document-style-templates.routes';
 import tutorialExerciseRoutes from './features/tutorial-exercises/tutorial-exercises.routes';
+import likesRoutes from './features/likes/likes.routes';
+import bookmarksRoutes from './features/bookmarks/bookmarks.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -124,6 +126,8 @@ export async function buildApp() {
   await app.register(documentRoutes, { prefix: '/api/v1/documents' });
   await app.register(styleTemplateRoutes, { prefix: '/api/v1/document-style-templates' });
   await app.register(tutorialExerciseRoutes, { prefix: '/api/v1' });
+  await app.register(likesRoutes, { prefix: '/api/v1' });
+  await app.register(bookmarksRoutes, { prefix: '/api/v1' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

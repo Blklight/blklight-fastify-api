@@ -117,7 +117,16 @@ export default async function documentRoutes(app: FastifyInstance) {
     },
   }, async (request: FastifyRequest<{ Params: { username: string; slug: string } }>, reply: FastifyReply) => {
     const { username, slug } = request.params;
-    const document = await getPublicDocument(username, slug);
+
+    let userId: string | undefined;
+    try {
+      await request.jwtVerify();
+      userId = request.user.userId;
+    } catch {
+      userId = undefined;
+    }
+
+    const document = await getPublicDocument(username, slug, userId);
 
     reply.send({
       data: document,

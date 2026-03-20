@@ -52,7 +52,8 @@ GET /api/v1/documents?limit=10&type=article&sort=recent
         },
         "authorship": {
           "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx"
-        }
+        },
+        "likesCount": 42
       }
     ],
     "nextCursor": "eyJwdWJsaXNoZWRBdCI6IjIwMjQtMDItMTVUMTA6MDA6MDAuMDAwWiIsImlkIjoiZG9jMTIzYWJjLi4uIn0=",
@@ -211,7 +212,8 @@ Get a paginated list of a specific author's published documents.
         },
         "authorship": {
           "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx"
-        }
+        },
+        "likesCount": 42
       }
     ],
     "nextCursor": null,
@@ -223,6 +225,147 @@ Get a paginated list of a specific author's published documents.
 ```
 
 **Error Codes:** `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+## Likes
+
+### POST /api/v1/documents/:id/like
+
+Toggle like status on a document. If already liked, this will unlike the document.
+
+**Auth Required:** Yes
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Document ID |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "liked": true,
+    "likesCount": 42
+  },
+  "error": null,
+  "message": "Document liked"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### GET /api/v1/documents/:id/likes
+
+Get the likes count for a document. If authenticated, also indicates whether the current user has liked it.
+
+**Auth Required:** No (optional)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Document ID |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "likesCount": 42,
+    "likedByMe": true
+  },
+  "error": null,
+  "message": "OK"
+}
+```
+
+**Note:** `likedByMe` is `null` when not authenticated (not `false`).
+
+**Error Codes:** `NOT_FOUND`
+
+---
+
+## Bookmarks
+
+### POST /api/v1/documents/:id/bookmark
+
+Toggle bookmark status on a document. If already bookmarked, this will remove the bookmark.
+
+**Auth Required:** Yes
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Document ID |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "bookmarked": true
+  },
+  "error": null,
+  "message": "Bookmark added"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### GET /api/v1/bookmarks/me
+
+Get the authenticated user's bookmarked documents.
+
+**Auth Required:** Yes
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| cursor | string | - | Pagination cursor |
+| limit | integer | 20 | Results per page (max 50) |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "doc123abc...",
+        "title": "Getting Started with TypeScript",
+        "abstract": "A comprehensive guide to TypeScript basics",
+        "coverImageUrl": "https://example.com/cover.jpg",
+        "slug": "getting-started-with-typescript",
+        "publishedAt": "2024-02-15T10:00:00.000Z",
+        "typeName": "article",
+        "author": {
+          "username": "johndoe",
+          "displayName": "John Doe",
+          "avatarUrl": "https://example.com/avatar.jpg"
+        },
+        "authorship": {
+          "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx"
+        },
+        "likesCount": 42,
+        "likesCount": 42
+      }
+    ],
+    "nextCursor": null,
+    "total": 3
+  },
+  "error": null,
+  "message": "Bookmarks retrieved"
+}
+```
+
+**Note:** Bookmarks are private — only the authenticated user can see their own bookmarks.
+
+**Error Codes:** `UNAUTHORIZED`, `VALIDATION_ERROR`
 
 ---
 

@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 9 complete — public reading routes implemented.
+Session 10 complete — likes and bookmarks implemented.
 
 ## Tech Stack
 
@@ -53,6 +53,14 @@ src/
       tutorial-exercises.service.ts - Tutorial exercise business logic
       tutorial-exercises.schema.ts - Drizzle schema: tutorial_exercises, exercise_submissions
       tutorial-exercises.zod.ts - Zod validation schemas
+    likes/
+      likes.routes.ts - Like route handlers
+      likes.service.ts - Like business logic
+      likes.schema.ts - Drizzle schema: document_likes
+    bookmarks/
+      bookmarks.routes.ts - Bookmark route handlers
+      bookmarks.service.ts - Bookmark business logic
+      bookmarks.schema.ts - Drizzle schema: document_bookmarks
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -207,6 +215,26 @@ src/
 
 Unique constraint: (user_id, exercise_id)
 
+### document_likes
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| document_id | text | foreign key → documents.id |
+| created_at | timestamp | default now() |
+
+Unique constraint: (user_id, document_id)
+
+### document_bookmarks
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| document_id | text | foreign key → documents.id |
+| created_at | timestamp | default now() |
+
+Unique constraint: (user_id, document_id)
+
 ## Available Scripts
 
 | Script | Description |
@@ -279,7 +307,11 @@ API docs at http://localhost:3000/docs
 - **DocumentCard never includes content field** — summary only, no full text
 - **Deleted users/profiles/documents always excluded from public queries** — triple check on documents.deleted_at, profiles.deleted_at, users.deleted_at
 - **Tutorial exercises included in full document read** — never in DocumentCard feed responses
-- **sort=popular is reserved** — currently falls back to published_at order until likes feature exists
+- **sort=popular is now active** — orders by likes_count DESC, published_at DESC
+- **likes_count always computed via COUNT(*)** — never stored in documents table
+- **liked_by_me is null for unauthenticated requests** — not false
+- **Bookmarks are always private** — only owner can see their bookmarks
+- **toggleLike and toggleBookmark are idempotent** — safe to call multiple times
 
 ## Response Format
 
@@ -391,6 +423,20 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
 }
 ```
 
+## Likes Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | /api/v1/documents/:id/like | Yes | Toggle like on a document |
+| GET | /api/v1/documents/:id/likes | No | Get likes count (includes liked_by_me if auth) |
+
+## Bookmarks Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | /api/v1/documents/:id/bookmark | Yes | Toggle bookmark on a document |
+| GET | /api/v1/bookmarks/me | Yes | List my bookmarks (paginated) |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -408,9 +454,10 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Likes/bookmarks feature (Session 10)
-- Full-text search endpoint (Session 11)
-- Follows feature (Session 12)
+- Books feature (Session 11)
+- Highlights feature (Session 12)
+- Journals feature (Session 13)
+- Follows feature (Session 14)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)
