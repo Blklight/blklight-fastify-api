@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { updateProfileSchema } from './profiles.zod';
 import { getPublicProfile, getOwnProfile, updateProfile, deleteAccount } from './profiles.service';
+import { getAuthorPublicDocuments } from '../documents/documents.service';
+import { authorFeedQuerySchema } from '../documents/documents.zod';
 import { env } from '../../config/env';
 
 const REFRESH_COOKIE_OPTIONS = {
@@ -72,6 +74,70 @@ export default async function profileRoutes(app: FastifyInstance) {
       },
       error: null,
       message: 'Profile retrieved',
+    });
+  });
+
+  app.get('/:username/documents', {
+    schema: {
+      summary: 'Get published documents by a specific author',
+      tags: ['profiles'],
+      params: {
+        type: 'object',
+        properties: {
+          username: { type: 'string' },
+        },
+        required: ['username'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          type: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'object',
+              properties: {
+                items: { type: 'array' },
+                nextCursor: { type: ['string', 'null'] },
+                total: { type: 'number' },
+              },
+            },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { username: string }; Querystring: { cursor?: string; limit?: number; type?: string } }>, reply: FastifyReply) => {
+    const { username } = request.params;
+    const parsed = authorFeedQuerySchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const result = await getAuthorPublicDocuments(username, parsed.data);
+
+    reply.send({
+      data: result,
+      error: null,
+      message: 'Author documents retrieved',
     });
   });
 

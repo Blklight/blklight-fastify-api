@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 8 complete — corrections and improvements applied.
+Session 9 complete — public reading routes implemented.
 
 ## Tech Stack
 
@@ -60,6 +60,7 @@ src/
     crypto.ts       - Password hashing + document signing utilities
     errors.ts       - Custom error classes
     sandbox.ts      - Code execution sandbox using node:vm
+    cursor.ts       - Cursor encoding/decoding for pagination
   config/
     env.ts          - Environment variable validation with Zod
   app.ts            - Fastify instance: plugins, hooks, error handler
@@ -273,6 +274,12 @@ API docs at http://localhost:3000/docs
 - **attempts array appended on each submission** — never replaced
 - **quiz and code exercises use discriminated union Zod schemas** — discriminated on `type` field
 - **Never add language support to sandbox without adding to SupportedLanguage type first**
+- **Public routes never require authentication** — response shape is identical for all visitors
+- **Cursor encodes { published_at, id } as opaque base64 JSON string** — enables stable pagination
+- **DocumentCard never includes content field** — summary only, no full text
+- **Deleted users/profiles/documents always excluded from public queries** — triple check on documents.deleted_at, profiles.deleted_at, users.deleted_at
+- **Tutorial exercises included in full document read** — never in DocumentCard feed responses
+- **sort=popular is reserved** — currently falls back to published_at order until likes feature exists
 
 ## Response Format
 
@@ -316,6 +323,15 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
 - When checking availability (register or update), the query excludes:
   - Active users with the same username
   - Deleted users where deleted_at > now() - interval '30 days'
+
+## Public Routes (No Auth Required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/v1/documents | Public document feed (cursor pagination) |
+| GET | /api/v1/documents/:username/:slug | Full public document (includes exercises for tutorials) |
+| GET | /api/v1/profiles/:username | Get public profile |
+| GET | /api/v1/profiles/:username/documents | Author's published documents (cursor pagination) |
 
 ## Document Routes
 
@@ -392,9 +408,10 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Public document routes (GET /documents/:username/:slug)
+- Likes/bookmarks feature (Session 10)
+- Full-text search endpoint (Session 11)
+- Follows feature (Session 12)
 - Contract signatures integration
-- Follows/likes feature
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)
 - Email verification

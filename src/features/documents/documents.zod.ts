@@ -25,3 +25,21 @@ export const updateDocumentSchema = z.object({
 
 export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
 export type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
+
+export const feedQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20).optional(),
+  type: z.string().optional(),
+  author: z.string().optional(),
+  q: z.string().min(1).max(100).optional(),
+  sort: z.enum(['recent', 'popular']).default('recent').optional(),
+});
+
+export const authorFeedQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20).optional(),
+  type: z.string().optional(),
+});
+
+export type FeedQueryInput = z.infer<typeof feedQuerySchema>;
+export type AuthorFeedQueryInput = z.infer<typeof authorFeedQuerySchema>;

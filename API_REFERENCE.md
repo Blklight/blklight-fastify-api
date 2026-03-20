@@ -2,6 +2,230 @@
 
 Base URL: `http://localhost:3000`
 
+## Public Documents (No Auth Required)
+
+These endpoints are publicly accessible without authentication. Any visitor can read documents, browse profiles, and explore content.
+
+---
+
+### GET /api/v1/documents
+
+Get a paginated feed of published documents.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| cursor | string | - | Opaque cursor for pagination (omit for first page) |
+| limit | integer | 20 | Results per page (max 50) |
+| type | string | - | Filter by document type (article, tutorial, contract, project, page) |
+| author | string | - | Filter by author's username |
+| q | string | - | Search in title and abstract (max 100 chars) |
+| sort | string | recent | Sort order: "recent" (only option currently) |
+
+**Pagination:**
+
+To get the first page, omit the `cursor` parameter. The response includes a `nextCursor` field. To get the next page, pass this cursor value in the `cursor` query parameter. When `nextCursor` is `null`, there are no more results.
+
+**Example Request:**
+```
+GET /api/v1/documents?limit=10&type=article&sort=recent
+```
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "doc123abc...",
+        "title": "Getting Started with TypeScript",
+        "abstract": "A comprehensive guide to TypeScript basics",
+        "coverImageUrl": "https://example.com/cover.jpg",
+        "slug": "getting-started-with-typescript",
+        "publishedAt": "2024-02-15T10:00:00.000Z",
+        "typeName": "article",
+        "author": {
+          "username": "johndoe",
+          "displayName": "John Doe",
+          "avatarUrl": "https://example.com/avatar.jpg"
+        },
+        "authorship": {
+          "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx"
+        }
+      }
+    ],
+    "nextCursor": "eyJwdWJsaXNoZWRBdCI6IjIwMjQtMDItMTVUMTA6MDA6MDAuMDAwWiIsImlkIjoiZG9jMTIzYWJjLi4uIn0=",
+    "total": 42
+  },
+  "error": null,
+  "message": "Feed retrieved"
+}
+```
+
+**Note:** The `cursor` value is base64-encoded JSON. Pass it as-is to the next request. Tutorial exercises are not included in feed items — only in full document reads.
+
+**Error Codes:** `VALIDATION_ERROR`
+
+---
+
+### GET /api/v1/documents/:username/:slug
+
+Get the full content of a published document.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Author's username |
+| slug | string | Document's URL-friendly slug |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "doc123abc...",
+    "title": "Understanding Async/Await in JavaScript",
+    "abstract": "Learn how to work with asynchronous code",
+    "content": {
+      "type": "doc",
+      "content": [...]
+    },
+    "coverImageUrl": "https://example.com/cover.jpg",
+    "slug": "understanding-async-await",
+    "publishedAt": "2024-02-15T10:00:00.000Z",
+    "typeName": "tutorial",
+    "author": {
+      "username": "johndoe",
+      "displayName": "John Doe",
+      "avatarUrl": "https://example.com/avatar.jpg"
+    },
+    "style": {
+      "typography": "sans",
+      "paperStyle": null,
+      "paperTexture": null,
+      "coverSettings": null,
+      "documentHeader": null,
+      "documentFooter": null,
+      "documentSignature": null
+    },
+    "authorship": {
+      "authorName": "John Doe",
+      "username": "johndoe",
+      "userHash": "abc123...",
+      "documentHash": "def456...",
+      "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx",
+      "hmac": "hmac789...",
+      "signedAt": "2024-02-15T10:00:00.000Z"
+    },
+    "exercises": [
+      {
+        "id": "exr123abc...",
+        "documentId": "doc123...",
+        "type": "code",
+        "data": {
+          "prompt": "Write a function that returns 'Hello, World!'",
+          "language": "javascript",
+          "initialCode": "// Start here\n"
+        },
+        "createdAt": "2024-02-15T10:00:00.000Z",
+        "updatedAt": "2024-02-15T10:00:00.000Z"
+      }
+    ]
+  },
+  "error": null,
+  "message": "Document retrieved"
+}
+```
+
+**Note:** The `exercises` array is only included for documents of type "tutorial". For other types, this field is omitted.
+
+**Error Codes:** `NOT_FOUND`
+
+---
+
+### GET /api/v1/profiles/:username
+
+Get a public profile by username.
+
+**Auth Required:** No
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "username": "johndoe",
+    "displayName": "John Doe",
+    "bio": "Software developer",
+    "avatarUrl": "https://example.com/avatar.jpg",
+    "socialLinks": {
+      "twitter": "https://twitter.com/johndoe",
+      "github": "https://github.com/johndoe"
+    },
+    "createdAt": "2024-01-15T10:30:00.000Z"
+  },
+  "error": null,
+  "message": "Profile retrieved"
+}
+```
+
+**Error Codes:** `NOT_FOUND`
+
+---
+
+### GET /api/v1/profiles/:username/documents
+
+Get a paginated list of a specific author's published documents.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Author's username |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| cursor | string | - | Pagination cursor |
+| limit | integer | 20 | Results per page (max 50) |
+| type | string | - | Filter by document type |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "doc123abc...",
+        "title": "Getting Started with TypeScript",
+        "abstract": "A comprehensive guide to TypeScript basics",
+        "coverImageUrl": "https://example.com/cover.jpg",
+        "slug": "getting-started-with-typescript",
+        "publishedAt": "2024-02-15T10:00:00.000Z",
+        "typeName": "article",
+        "author": {
+          "username": "johndoe",
+          "displayName": "John Doe",
+          "avatarUrl": "https://example.com/avatar.jpg"
+        },
+        "authorship": {
+          "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx"
+        }
+      }
+    ],
+    "nextCursor": null,
+    "total": 5
+  },
+  "error": null,
+  "message": "Author documents retrieved"
+}
+```
+
+**Error Codes:** `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
 ## Authentication
 
 Most endpoints require authentication via Bearer token. Pass the JWT access token in the `Authorization` header:

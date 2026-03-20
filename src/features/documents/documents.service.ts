@@ -1,10 +1,12 @@
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, lt, or, ilike, count } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { documents, documentTypes, documentStyles, Document, NewDocument, NewDocumentStyle } from './documents.schema';
 import { profiles } from '../profiles/profiles.schema';
+import { users } from '../auth/auth.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError } from '../../utils/errors';
+import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import type { CreateDocumentInput, UpdateDocumentInput } from './documents.zod';
 import type { NewProfile } from '../profiles/profiles.schema';
 
@@ -456,4 +458,416 @@ async function getDocumentById(documentId: string, authorId: string): Promise<Do
       documentSignature: style.documentSignature as Record<string, unknown> | null,
     },
   };
+}
+
+export interface FeedParams {
+  cursor?: string;
+  limit?: number;
+  type?: string;
+  author?: string;
+  q?: string;
+  sort?: 'recent' | 'popular';
+}
+
+export interface FeedResult {
+  items: DocumentCard[];
+  nextCursor: string | null;
+  total: number;
+}
+
+export interface DocumentCard {
+  id: string;
+  title: string;
+  abstract: string | null;
+  coverImageUrl: string | null;
+  slug: string;
+  publishedAt: Date;
+  typeName: string;
+  author: {
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
+  authorship: {
+    publicIdentifier: string;
+  };
+}
+
+export interface AuthorFeedParams {
+  cursor?: string;
+  limit?: number;
+  type?: string;
+}
+
+export interface DocumentFull {
+  id: string;
+  title: string;
+  abstract: string | null;
+  content: Record<string, unknown> | null;
+  coverImageUrl: string | null;
+  slug: string;
+  publishedAt: Date;
+  typeName: string;
+  author: {
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
+  style: {
+    typography: string;
+    paperStyle: Record<string, unknown> | null;
+    paperTexture: Record<string, unknown> | null;
+    coverSettings: Record<string, unknown> | null;
+    documentHeader: Record<string, unknown> | null;
+    documentFooter: Record<string, unknown> | null;
+    documentSignature: Record<string, unknown> | null;
+  };
+  authorship: Authorship;
+  exercises?: unknown[];
+}
+
+/**
+ * Get public feed of published documents with cursor-based pagination.
+ * @param params - Feed parameters (cursor, limit, type, author, q, sort)
+ * @returns Feed result with items, nextCursor, and total count
+ */
+export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
+  const limit = Math.min(params.limit ?? 20, 50);
+  const conditions: ReturnType<typeof eq>[] = [];
+
+  conditions.push(eq(documents.status, 'published'));
+  conditions.push(isNull(documents.deletedAt));
+
+  if (params.type) {
+    conditions.push(eq(documentTypes.name, params.type));
+  }
+
+  if (params.author) {
+    conditions.push(eq(profiles.username, params.author));
+  }
+
+  if (params.cursor) {
+    const { publishedAt, id } = decodeCursor(params.cursor);
+    conditions.push(lt(documents.publishedAt, publishedAt));
+  }
+
+  let query = db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      abstract: documents.abstract,
+      coverImageUrl: documents.coverImageUrl,
+      slug: documents.slug,
+      publishedAt: documents.publishedAt,
+      typeName: documentTypes.name,
+      username: profiles.username,
+      displayName: profiles.displayName,
+      avatarUrl: profiles.avatarUrl,
+      authorship: documents.authorship,
+    })
+    .from(documents)
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .innerJoin(users, eq(profiles.userId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(documents.publishedAt), desc(documents.id))
+    .limit(limit + 1);
+
+  if (params.q) {
+    const searchPattern = `%${params.q}%`;
+    query = db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        abstract: documents.abstract,
+        coverImageUrl: documents.coverImageUrl,
+        slug: documents.slug,
+        publishedAt: documents.publishedAt,
+        typeName: documentTypes.name,
+        username: profiles.username,
+        displayName: profiles.displayName,
+        avatarUrl: profiles.avatarUrl,
+        authorship: documents.authorship,
+      })
+      .from(documents)
+      .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+      .innerJoin(profiles, eq(documents.authorId, profiles.id))
+      .innerJoin(users, eq(profiles.userId, users.id))
+      .where(
+        and(
+          ...conditions,
+          or(
+            ilike(documents.title, searchPattern),
+            ilike(documents.abstract, searchPattern)
+          )
+        )
+      )
+      .orderBy(desc(documents.publishedAt), desc(documents.id))
+      .limit(limit + 1) as typeof query;
+  }
+
+  const results = await query;
+
+  const hasMore = results.length > limit;
+  if (hasMore) {
+    results.pop();
+  }
+
+  const items: DocumentCard[] = results.map((r) => {
+    const authorship = r.authorship as Authorship | null;
+    return {
+      id: r.id,
+      title: r.title,
+      abstract: r.abstract,
+      coverImageUrl: r.coverImageUrl,
+      slug: r.slug,
+      publishedAt: r.publishedAt as Date,
+      typeName: r.typeName,
+      author: {
+        username: r.username,
+        displayName: r.displayName,
+        avatarUrl: r.avatarUrl,
+      },
+      authorship: {
+        publicIdentifier: authorship?.publicIdentifier ?? '',
+      },
+    };
+  });
+
+  const lastResult = results[results.length - 1];
+  const nextCursor = hasMore && lastResult
+    ? encodeCursor(lastResult.publishedAt as Date, lastResult.id)
+    : null;
+
+  let countQuery = db
+    .select({ count: count() })
+    .from(documents)
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .innerJoin(users, eq(profiles.userId, users.id))
+    .where(and(...conditions));
+
+  if (params.q) {
+    const searchPattern = `%${params.q}%`;
+    countQuery = db
+      .select({ count: count() })
+      .from(documents)
+      .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+      .innerJoin(profiles, eq(documents.authorId, profiles.id))
+      .innerJoin(users, eq(profiles.userId, users.id))
+      .where(
+        and(
+          ...conditions,
+          or(
+            ilike(documents.title, searchPattern),
+            ilike(documents.abstract, searchPattern)
+          )
+        )
+      ) as typeof countQuery;
+  }
+
+  const totalResult = await countQuery;
+  const total = Number(totalResult[0]?.count ?? 0);
+
+  return { items, nextCursor, total };
+}
+
+/**
+ * Get a full public document by username and slug.
+ * @param username - The author's username
+ * @param slug - The document's slug
+ * @returns Full document with style, authorship, and exercises if tutorial
+ * @throws NotFoundError if document not found, deleted, or not published
+ */
+export async function getPublicDocument(username: string, slug: string): Promise<DocumentFull> {
+  const docResult = await db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      abstract: documents.abstract,
+      content: documents.content,
+      coverImageUrl: documents.coverImageUrl,
+      slug: documents.slug,
+      publishedAt: documents.publishedAt,
+      typeName: documentTypes.name,
+      username: profiles.username,
+      displayName: profiles.displayName,
+      avatarUrl: profiles.avatarUrl,
+      authorship: documents.authorship,
+    })
+    .from(documents)
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .innerJoin(users, eq(profiles.userId, users.id))
+    .where(
+      and(
+        eq(profiles.username, username),
+        eq(documents.slug, slug),
+        eq(documents.status, 'published'),
+        isNull(documents.deletedAt),
+        isNull(profiles.deletedAt),
+        isNull(users.deletedAt)
+      )
+    )
+    .limit(1);
+
+  if (docResult.length === 0) {
+    throw new NotFoundError('Document not found');
+  }
+
+  const doc = docResult[0]!;
+
+  const styleResult = await db
+    .select()
+    .from(documentStyles)
+    .where(eq(documentStyles.documentId, doc.id))
+    .limit(1);
+
+  const style = styleResult[0] ?? {
+    typography: 'sans',
+    paperStyle: null,
+    paperTexture: null,
+    coverSettings: null,
+    documentHeader: null,
+    documentFooter: null,
+    documentSignature: null,
+  };
+
+  const result: DocumentFull = {
+    id: doc.id,
+    title: doc.title,
+    abstract: doc.abstract,
+    content: doc.content as Record<string, unknown> | null,
+    coverImageUrl: doc.coverImageUrl,
+    slug: doc.slug,
+    publishedAt: doc.publishedAt as Date,
+    typeName: doc.typeName,
+    author: {
+      username: doc.username,
+      displayName: doc.displayName,
+      avatarUrl: doc.avatarUrl,
+    },
+    style: {
+      typography: style.typography,
+      paperStyle: style.paperStyle as Record<string, unknown> | null,
+      paperTexture: style.paperTexture as Record<string, unknown> | null,
+      coverSettings: style.coverSettings as Record<string, unknown> | null,
+      documentHeader: style.documentHeader as Record<string, unknown> | null,
+      documentFooter: style.documentFooter as Record<string, unknown> | null,
+      documentSignature: style.documentSignature as Record<string, unknown> | null,
+    },
+    authorship: doc.authorship as Authorship,
+  };
+
+  if (doc.typeName === 'tutorial') {
+    const { getExercises } = await import('../tutorial-exercises/tutorial-exercises.service');
+    result.exercises = await getExercises(doc.id);
+  }
+
+  return result;
+}
+
+/**
+ * Get published documents by a specific author with cursor-based pagination.
+ * @param username - The author's username
+ * @param params - Feed parameters (cursor, limit, type)
+ * @returns Feed result with items, nextCursor, and total count
+ * @throws NotFoundError if profile not found or deleted
+ */
+export async function getAuthorPublicDocuments(username: string, params: AuthorFeedParams): Promise<FeedResult> {
+  const profileResult = await db
+    .select()
+    .from(profiles)
+    .innerJoin(users, eq(profiles.userId, users.id))
+    .where(
+      and(
+        eq(profiles.username, username),
+        isNull(profiles.deletedAt),
+        isNull(users.deletedAt)
+      )
+    )
+    .limit(1);
+
+  if (profileResult.length === 0) {
+    throw new NotFoundError('Profile not found');
+  }
+
+  const profile = profileResult[0]!;
+  const limit = Math.min(params.limit ?? 20, 50);
+  const conditions: ReturnType<typeof eq>[] = [];
+
+  conditions.push(eq(documents.authorId, profile.profiles.id));
+  conditions.push(eq(documents.status, 'published'));
+  conditions.push(isNull(documents.deletedAt));
+
+  if (params.type) {
+    conditions.push(eq(documentTypes.name, params.type));
+  }
+
+  if (params.cursor) {
+    const { publishedAt, id } = decodeCursor(params.cursor);
+    conditions.push(lt(documents.publishedAt, publishedAt));
+  }
+
+  const results = await db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      abstract: documents.abstract,
+      coverImageUrl: documents.coverImageUrl,
+      slug: documents.slug,
+      publishedAt: documents.publishedAt,
+      typeName: documentTypes.name,
+      username: profiles.username,
+      displayName: profiles.displayName,
+      avatarUrl: profiles.avatarUrl,
+      authorship: documents.authorship,
+    })
+    .from(documents)
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .where(and(...conditions))
+    .orderBy(desc(documents.publishedAt), desc(documents.id))
+    .limit(limit + 1);
+
+  const hasMore = results.length > limit;
+  if (hasMore) {
+    results.pop();
+  }
+
+  const items: DocumentCard[] = results.map((r) => {
+    const authorship = r.authorship as Authorship | null;
+    return {
+      id: r.id,
+      title: r.title,
+      abstract: r.abstract,
+      coverImageUrl: r.coverImageUrl,
+      slug: r.slug,
+      publishedAt: r.publishedAt as Date,
+      typeName: r.typeName,
+      author: {
+        username: r.username,
+        displayName: r.displayName,
+        avatarUrl: r.avatarUrl,
+      },
+      authorship: {
+        publicIdentifier: authorship?.publicIdentifier ?? '',
+      },
+    };
+  });
+
+  const lastResult = results[results.length - 1];
+  const nextCursor = hasMore && lastResult
+    ? encodeCursor(lastResult.publishedAt as Date, lastResult.id)
+    : null;
+
+  const totalResult = await db
+    .select({ count: count() })
+    .from(documents)
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .where(and(...conditions));
+
+  const total = Number(totalResult[0]?.count ?? 0);
+
+  return { items, nextCursor, total };
 }

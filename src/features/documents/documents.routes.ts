@@ -1,11 +1,13 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { createDocumentSchema, updateDocumentSchema } from './documents.zod';
+import { createDocumentSchema, updateDocumentSchema, feedQuerySchema } from './documents.zod';
 import {
   createDocument,
   updateDocument,
   publishDocument,
   softDeleteDocument,
   getMyDocuments,
+  getPublicFeed,
+  getPublicDocument,
 } from './documents.service';
 import { profiles } from '../profiles/profiles.schema';
 import { db } from '../../db/index';
@@ -31,6 +33,99 @@ declare module '@fastify/jwt' {
 }
 
 export default async function documentRoutes(app: FastifyInstance) {
+  app.get('/', {
+    schema: {
+      summary: 'Get public document feed',
+      tags: ['documents'],
+      querystring: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          type: { type: 'string' },
+          author: { type: 'string' },
+          q: { type: 'string', minLength: 1, maxLength: 100 },
+          sort: { type: 'string', enum: ['recent', 'popular'], default: 'recent' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'object',
+              properties: {
+                items: { type: 'array' },
+                nextCursor: { type: ['string', 'null'] },
+                total: { type: 'number' },
+              },
+            },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Querystring: { cursor?: string; limit?: number; type?: string; author?: string; q?: string; sort?: string } }>, reply: FastifyReply) => {
+    const parsed = feedQuerySchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const result = await getPublicFeed(parsed.data);
+
+    reply.send({
+      data: result,
+      error: null,
+      message: 'Feed retrieved',
+    });
+  });
+
+  app.get('/:username/:slug', {
+    schema: {
+      summary: 'Get a public document by username and slug',
+      tags: ['documents'],
+      params: {
+        type: 'object',
+        properties: {
+          username: { type: 'string' },
+          slug: { type: 'string' },
+        },
+        required: ['username', 'slug'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { username: string; slug: string } }>, reply: FastifyReply) => {
+    const { username, slug } = request.params;
+    const document = await getPublicDocument(username, slug);
+
+    reply.send({
+      data: document,
+      error: null,
+      message: 'Document retrieved',
+    });
+  });
+
   app.addHook('preHandler', async (request, reply) => {
     await app.authenticate(request, reply);
   });
