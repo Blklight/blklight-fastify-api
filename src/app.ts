@@ -17,6 +17,7 @@ import likesRoutes from './features/likes/likes.routes';
 import bookmarksRoutes from './features/bookmarks/bookmarks.routes';
 import categoryRoutes from './features/categories/categories.routes';
 import tagRoutes from './features/tags/tags.routes';
+import bookRoutes from './features/books/books.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -132,6 +133,7 @@ export async function buildApp() {
   await app.register(bookmarksRoutes, { prefix: '/api/v1' });
   await app.register(categoryRoutes, { prefix: '/api/v1/categories' });
   await app.register(tagRoutes, { prefix: '/api/v1/tags' });
+  await app.register(bookRoutes, { prefix: '/api/v1/books' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

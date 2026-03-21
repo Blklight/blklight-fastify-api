@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 11 complete — tags and categories implemented.
+Session 12 complete — books feature implemented.
 
 ## Tech Stack
 
@@ -69,6 +69,11 @@ src/
       tags.routes.ts - Tag route handlers (public)
       tags.service.ts - Tag business logic
       tags.schema.ts - Drizzle schema: tags, document_tags
+    books/
+      books.routes.ts - Book route handlers (auth required)
+      books.service.ts - Book business logic
+      books.schema.ts - Drizzle schema: books, book_chapters, book_category, book_tags, book_progress, book_chapter_progress
+      books.zod.ts - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -77,6 +82,7 @@ src/
     errors.ts       - Custom error classes
     sandbox.ts      - Code execution sandbox using node:vm
     cursor.ts       - Cursor encoding/decoding for pagination
+    toc.ts          - Table of contents extraction from TipTap JSON
   config/
     env.ts          - Environment variable validation with Zod
   app.ts            - Fastify instance: plugins, hooks, error handler
@@ -279,6 +285,74 @@ Unique constraint: (user_id, document_id)
 
 Unique constraint: (document_id, tag_id)
 
+### books
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| author_id | text | foreign key → profiles.id |
+| status | text | 'draft' \| 'published' |
+| title | text | not null |
+| description | text | nullable |
+| cover_image_url | text | nullable |
+| slug | text | unique per author (author_id + slug) |
+| toc | jsonb | auto-generated but editable, null on draft |
+| authorship | jsonb | set on publish |
+| deleted_at | timestamp | nullable (soft delete) |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+### book_chapters
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| book_id | text | foreign key → books.id |
+| document_id | text | foreign key → documents.id |
+| position | integer | order within the book |
+| intro_text | text | nullable (transition before chapter) |
+| outro_text | text | nullable (transition after chapter) |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+Unique constraint: (book_id, document_id)
+Unique constraint: (book_id, position)
+
+### book_category
+| Column | Type | Notes |
+|--------|------|-------|
+| book_id | text | primary key, foreign key → books.id |
+| category_id | text | foreign key → categories.id |
+
+### book_tags
+| Column | Type | Notes |
+|--------|------|-------|
+| book_id | text | foreign key → books.id |
+| tag_id | text | foreign key → tags.id |
+
+Unique constraint: (book_id, tag_id)
+
+### book_progress
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| book_id | text | foreign key → books.id |
+| last_chapter_id | text | foreign key → book_chapters.id |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+Unique constraint: (user_id, book_id)
+
+### book_chapter_progress
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| chapter_id | text | foreign key → book_chapters.id |
+| is_read | boolean | default false |
+| read_at | timestamp | nullable |
+
+Unique constraint: (user_id, chapter_id)
+
 ## Available Scripts
 
 | Script | Description |
@@ -366,6 +440,15 @@ API docs at http://localhost:3000/docs
 - **Deleted categories reparent children to root** — done in same transaction
 - **Public feed supports category and tag filters** — ?category=slug&tag=slug query params
 - **DocumentCard and DocumentFull include category and tags** — always fetched on read
+- **Books always reference existing published documents** — no content duplication
+- **Only the author's own published documents can be chapters** — verified on addChapter()
+- **TOC auto-generated on chapter add/remove/reorder** — manually editable via updateToc()
+- **Adding/removing chapters requires draft status** — published books cannot be modified
+- **Category required on publish for books** — same rule as documents
+- **book_progress and book_chapter_progress use upsert** — never duplicated
+- **Books feed requires authentication** — unlike documents, books are not public without login
+- **document_hash for books = SHA-256({ title, description, author })** — passed to signDocument()
+- **Chapter documents include title, abstract, slug in BookFull** — never full content
 
 ## Response Format
 
@@ -512,6 +595,24 @@ Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?catego
 |--------|----------|------|-------------|
 | GET | /api/v1/tags/popular | No | Get popular tags (sorted by document count) |
 
+## Books Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/books | Yes | Public book feed (cursor pagination) |
+| GET | /api/v1/books/me | Yes | Get my books |
+| GET | /api/v1/books/:username/:slug | Yes | Get a full book with chapters and progress |
+| POST | /api/v1/books | Yes | Create a book |
+| PATCH | /api/v1/books/:id | Yes | Update a book |
+| PATCH | /api/v1/books/:id/publish | Yes | Publish a book |
+| DELETE | /api/v1/books/:id | Yes | Soft delete a book |
+| POST | /api/v1/books/:id/chapters | Yes | Add a chapter (draft only) |
+| PATCH | /api/v1/books/:id/chapters/:chapterId | Yes | Update a chapter |
+| DELETE | /api/v1/books/:id/chapters/:chapterId | Yes | Remove a chapter (draft only) |
+| PATCH | /api/v1/books/:id/chapters/reorder | Yes | Reorder chapters |
+| PATCH | /api/v1/books/:id/toc | Yes | Update table of contents |
+| PATCH | /api/v1/books/:id/progress/:chapterId | Yes | Update reading progress |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -529,10 +630,10 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Books feature (Session 12)
 - Highlights feature (Session 13)
 - Journals feature (Session 14)
 - Follows feature (Session 15)
+- Tests (Session 16)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)

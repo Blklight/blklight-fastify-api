@@ -1525,6 +1525,394 @@ Submit an answer to an exercise.
 
 ---
 
+## Books
+
+> **Note:** All book routes require authentication. Books are not publicly accessible.
+
+### GET /api/v1/books
+
+Get a paginated feed of published books.
+
+**Auth Required:** Yes
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| cursor | string | - | Opaque cursor for pagination |
+| limit | integer | 20 | Results per page (max 50) |
+| category | string | - | Filter by category slug |
+| tag | string | - | Filter by tag slug |
+| q | string | - | Search in title and description |
+| sort | string | recent | Sort order: "recent" or "popular" |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "book123...",
+        "title": "TypeScript Mastery",
+        "description": "A comprehensive guide",
+        "coverImageUrl": "https://example.com/cover.jpg",
+        "slug": "typescript-mastery",
+        "status": "published",
+        "author": {
+          "username": "johndoe",
+          "displayName": "John Doe",
+          "avatarUrl": "https://example.com/avatar.jpg"
+        },
+        "chapterCount": 8,
+        "category": { "id": "cat123...", "name": "Programming", "slug": "programming" },
+        "tags": [
+          { "id": "tag123...", "name": "typescript", "slug": "typescript" }
+        ],
+        "updatedAt": "2024-02-15T10:00:00.000Z",
+        "createdAt": "2024-01-01T00:00:00.000Z"
+      }
+    ],
+    "nextCursor": null,
+    "total": 5
+  },
+  "error": null,
+  "message": "Books retrieved"
+}
+```
+
+---
+
+### GET /api/v1/books/me
+
+Get all books created by the authenticated user.
+
+**Auth Required:** Yes
+
+**Example Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "book123...",
+      "title": "TypeScript Mastery",
+      "status": "draft",
+      "chapterCount": 3,
+      ...
+    }
+  ],
+  "error": null,
+  "message": "Books retrieved"
+}
+```
+
+---
+
+### GET /api/v1/books/:username/:slug
+
+Get a full book with chapters and reading progress.
+
+**Auth Required:** Yes
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Author's username |
+| slug | string | Book slug |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "book123...",
+    "title": "TypeScript Mastery",
+    "description": "A comprehensive guide",
+    "coverImageUrl": "https://example.com/cover.jpg",
+    "slug": "typescript-mastery",
+    "status": "published",
+    "author": {
+      "username": "johndoe",
+      "displayName": "John Doe",
+      "avatarUrl": "https://example.com/avatar.jpg"
+    },
+    "category": { "id": "cat123...", "name": "Programming", "slug": "programming" },
+    "tags": [...],
+    "toc": [
+      {
+        "chapterId": "ch1...",
+        "title": "Chapter 1: Getting Started",
+        "headings": [
+          { "level": 2, "text": "Installation", "anchor": "installation" },
+          { "level": 2, "text": "Configuration", "anchor": "configuration" }
+        ]
+      }
+    ],
+    "authorship": {
+      "authorName": "John Doe",
+      "username": "johndoe",
+      "userHash": "...",
+      "documentHash": "...",
+      "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx",
+      "hmac": "...",
+      "signedAt": "2024-02-15T10:00:00.000Z"
+    },
+    "chapters": [
+      {
+        "id": "ch1...",
+        "position": 1,
+        "introText": "Welcome to the first chapter...",
+        "outroText": "In the next chapter we will...",
+        "document": {
+          "id": "doc123...",
+          "title": "Getting Started with TypeScript",
+          "abstract": "Learn the basics...",
+          "slug": "getting-started-with-typescript"
+        },
+        "progress": {
+          "isRead": true,
+          "readAt": "2024-02-16T14:30:00.000Z"
+        }
+      }
+    ],
+    "progress": {
+      "lastChapterId": "ch2..."
+    }
+  },
+  "error": null,
+  "message": "Book retrieved"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### POST /api/v1/books
+
+Create a new book.
+
+**Auth Required:** Yes
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | Yes | 1-200 chars |
+| description | string | No | Max 500 chars |
+| coverImageUrl | string | No | Valid URL |
+| slug | string | No | Custom slug (lowercase alphanumeric with hyphens) |
+| categoryId | string | No | Category ID (required on publish) |
+| tags | string[] | No | Tag names (max 5) |
+
+**Example Request:**
+```json
+{
+  "title": "TypeScript Mastery",
+  "description": "A comprehensive guide to TypeScript",
+  "categoryId": "cat123..."
+}
+```
+
+**Example Response (201):**
+```json
+{
+  "data": {
+    "id": "book123...",
+    "title": "TypeScript Mastery",
+    "status": "draft",
+    ...
+  },
+  "error": null,
+  "message": "Book created"
+}
+```
+
+---
+
+### PATCH /api/v1/books/:id
+
+Update a book.
+
+**Auth Required:** Yes (must be book owner)
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | No | 1-200 chars |
+| description | string | No | Max 500 chars |
+| coverImageUrl | string | No | Valid URL |
+| slug | string | No | Custom slug |
+| categoryId | string | No | Category ID (set to null to remove) |
+| tags | string[] | No | Tag names (max 5, replaces all) |
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### PATCH /api/v1/books/:id/publish
+
+Publish a book. Generates authorship stamp and TOC.
+
+**Auth Required:** Yes (must be book owner)
+
+**Requirements:**
+- Book must have at least one chapter
+- Category must be assigned
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "book123...",
+    "status": "published",
+    "authorship": { ... },
+    "toc": [ ... ]
+  },
+  "error": null,
+  "message": "Book published"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### DELETE /api/v1/books/:id
+
+Soft delete a book.
+
+**Auth Required:** Yes (must be book owner)
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Book deleted"
+}
+```
+
+---
+
+### POST /api/v1/books/:id/chapters
+
+Add a published document as a chapter to a draft book.
+
+**Auth Required:** Yes (must be book owner)
+
+**Note:** Book must be in draft status. Published books cannot have chapters added or removed.
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| documentId | string | Yes | ID of a published document owned by the author |
+| position | integer | No | Chapter position (appended at end if not provided) |
+| introText | string | No | Transition text before chapter (max 1000) |
+| outroText | string | No | Transition text after chapter (max 1000) |
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`, `CONFLICT`
+
+---
+
+### PATCH /api/v1/books/:id/chapters/:chapterId
+
+Update a chapter's transition texts or reorder it.
+
+**Auth Required:** Yes (must be book owner)
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| introText | string | No | Transition text before chapter |
+| outroText | string | No | Transition text after chapter |
+| position | integer | No | New position in the book |
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### DELETE /api/v1/books/:id/chapters/:chapterId
+
+Remove a chapter from a book.
+
+**Auth Required:** Yes (must be book owner)
+
+**Note:** Book must be in draft status.
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### PATCH /api/v1/books/:id/chapters/reorder
+
+Reorder chapters in a book.
+
+**Auth Required:** Yes (must be book owner)
+
+**Request Body:**
+```json
+{
+  "chapters": [
+    { "id": "ch1...", "position": 1 },
+    { "id": "ch2...", "position": 2 },
+    { "id": "ch3...", "position": 3 }
+  ]
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### PATCH /api/v1/books/:id/toc
+
+Manually update the table of contents.
+
+**Auth Required:** Yes (must be book owner)
+
+**Request Body:**
+```json
+{
+  "toc": [
+    {
+      "chapterId": "ch1...",
+      "title": "Chapter 1: Getting Started",
+      "headings": [
+        { "level": 2, "text": "Installation", "anchor": "installation" }
+      ]
+    }
+  ]
+}
+```
+
+**Note:** TOC is auto-generated when chapters are added, removed, or reordered. Use this to make manual edits.
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### PATCH /api/v1/books/:id/progress/:chapterId
+
+Update reading progress on a chapter. Creates or updates book progress and chapter progress records.
+
+**Auth Required:** Yes
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Progress updated"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
 ## Error Codes Reference
 
 | Code | HTTP Status | Description |
