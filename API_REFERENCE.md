@@ -21,7 +21,9 @@ Get a paginated feed of published documents.
 | type | string | - | Filter by document type (article, tutorial, contract, project, page) |
 | author | string | - | Filter by author's username |
 | q | string | - | Search in title and abstract (max 100 chars) |
-| sort | string | recent | Sort order: "recent" (only option currently) |
+| sort | string | recent | Sort order: "recent" or "popular" |
+| category | string | - | Filter by category slug |
+| tag | string | - | Filter by tag slug |
 
 **Pagination:**
 
@@ -366,6 +368,221 @@ Get the authenticated user's bookmarked documents.
 **Note:** Bookmarks are private — only the authenticated user can see their own bookmarks.
 
 **Error Codes:** `UNAUTHORIZED`, `VALIDATION_ERROR`
+
+---
+
+## Categories
+
+### GET /api/v1/categories
+
+Get all categories in a hierarchical tree structure.
+
+**Auth Required:** No
+
+**Example Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "cat123...",
+      "name": "Technology",
+      "slug": "technology",
+      "description": "Articles about tech",
+      "parentId": null,
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "children": [
+        {
+          "id": "cat456...",
+          "name": "Programming",
+          "slug": "programming",
+          "description": "Programming guides",
+          "parentId": "cat123...",
+          "createdAt": "2024-01-02T00:00:00.000Z",
+          "children": []
+        }
+      ],
+      "documentCount": 10
+    }
+  ],
+  "error": null,
+  "message": "Categories retrieved"
+}
+```
+
+---
+
+### GET /api/v1/categories/:slug
+
+Get a single category by slug.
+
+**Auth Required:** No
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| slug | string | Category slug |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "cat123...",
+    "name": "Technology",
+    "slug": "technology",
+    "description": "Articles about tech",
+    "parentId": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "children": [],
+    "documentCount": 10
+  },
+  "error": null,
+  "message": "Category retrieved"
+}
+```
+
+**Error Codes:** `NOT_FOUND`
+
+---
+
+### POST /api/v1/categories
+
+Create a new category.
+
+**Auth Required:** Yes (admin only)
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| name | string | Yes | Category name (max 50) |
+| description | string | No | Category description (max 200) |
+| parentId | string | No | Parent category ID for hierarchy |
+
+**Example Response (201):**
+```json
+{
+  "data": {
+    "id": "cat789...",
+    "name": "Science",
+    "slug": "science",
+    "description": null,
+    "parentId": null,
+    "createdAt": "2024-01-03T00:00:00.000Z"
+  },
+  "error": null,
+  "message": "Category created"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `NOT_FOUND`
+
+---
+
+### PATCH /api/v1/categories/:id
+
+Update a category.
+
+**Auth Required:** Yes (admin only)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Category ID |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| name | string | No | New category name (max 50) |
+| description | string | No | New description (max 200) |
+| parentId | string | No | New parent ID (set to null for root) |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "cat789...",
+    "name": "Natural Science",
+    "slug": "natural-science",
+    "description": "Biology, chemistry, physics",
+    "parentId": null,
+    "createdAt": "2024-01-03T00:00:00.000Z"
+  },
+  "error": null,
+  "message": "Category updated"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `NOT_FOUND`
+
+---
+
+### DELETE /api/v1/categories/:id
+
+Delete a category. Orphaned children are reparented to root.
+
+**Auth Required:** Yes (admin only)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Category ID |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Category deleted"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`
+
+---
+
+## Tags
+
+### GET /api/v1/tags/popular
+
+Get popular tags sorted by document count.
+
+**Auth Required:** No
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | integer | 20 | Max tags to return (max 50) |
+
+**Example Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "tag123...",
+      "name": "typescript",
+      "slug": "typescript",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "documentCount": 25
+    },
+    {
+      "id": "tag456...",
+      "name": "javascript",
+      "slug": "javascript",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "documentCount": 18
+    }
+  ],
+  "error": null,
+  "message": "Tags retrieved"
+}
+```
+
+**Error Codes:** `VALIDATION_ERROR`
 
 ---
 
@@ -756,6 +973,8 @@ Create a new document.
 | content | object | No | TipTap JSON content |
 | coverImageUrl | string | No | Valid URL |
 | slug | string | No | Custom slug (lowercase alphanumeric with hyphens) |
+| categoryId | string | No | Category ID (required on publish) |
+| tags | string[] | No | Tag names (max 5) |
 
 **Example Request:**
 ```json
@@ -832,6 +1051,8 @@ Update a document.
 | coverSettings | object | No | Cover settings |
 | documentHeader | object | No | Header configuration |
 | documentFooter | object | No | Footer configuration |
+| categoryId | string | No | Category ID (set to null to remove) |
+| tags | string[] | No | Tag names — replaces all existing (max 5, empty array to remove all) |
 
 **Note:** Editing content on a published document resets authorship and status to draft. You must re-publish to re-sign.
 

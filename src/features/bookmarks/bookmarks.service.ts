@@ -7,6 +7,8 @@ import { profiles } from '../profiles/profiles.schema';
 import { users } from '../auth/auth.schema';
 import { NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { getDocumentTags } from '../tags/tags.service';
+import { getDocumentCategory } from '../categories/categories.service';
 import type { DocumentCard, FeedResult } from '../documents/documents.service';
 import type { Authorship } from '../documents/documents.service';
 
@@ -74,27 +76,35 @@ export async function getMyBookmarks(userId: string, params: BookmarkParams): Pr
     results.pop();
   }
 
-  const items: DocumentCard[] = results.map((r) => {
-    const authorship = r.authorship as Authorship | null;
-    return {
-      id: r.id,
-      title: r.title,
-      abstract: r.abstract,
-      coverImageUrl: r.coverImageUrl,
-      slug: r.slug,
-      publishedAt: r.publishedAt as Date,
-      typeName: r.typeName,
-      author: {
-        username: r.username,
-        displayName: r.displayName,
-        avatarUrl: r.avatarUrl,
-      },
-      authorship: {
-        publicIdentifier: authorship?.publicIdentifier ?? '',
-      },
-      likesCount: 0,
-    };
-  });
+  const items: DocumentCard[] = await Promise.all(
+    results.map(async (r) => {
+      const authorship = r.authorship as Authorship | null;
+      const docTags = await getDocumentTags(r.id);
+      const docCategory = await getDocumentCategory(r.id);
+      return {
+        id: r.id,
+        title: r.title,
+        abstract: r.abstract,
+        coverImageUrl: r.coverImageUrl,
+        slug: r.slug,
+        publishedAt: r.publishedAt as Date,
+        typeName: r.typeName,
+        author: {
+          username: r.username,
+          displayName: r.displayName,
+          avatarUrl: r.avatarUrl,
+        },
+        authorship: {
+          publicIdentifier: authorship?.publicIdentifier ?? '',
+        },
+        likesCount: 0,
+        category: docCategory
+          ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
+          : null,
+        tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
+      };
+    })
+  );
 
   const lastResult = results[results.length - 1];
   const nextCursor = hasMore && lastResult

@@ -15,6 +15,8 @@ import styleTemplateRoutes from './features/document-style-templates/document-st
 import tutorialExerciseRoutes from './features/tutorial-exercises/tutorial-exercises.routes';
 import likesRoutes from './features/likes/likes.routes';
 import bookmarksRoutes from './features/bookmarks/bookmarks.routes';
+import categoryRoutes from './features/categories/categories.routes';
+import tagRoutes from './features/tags/tags.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -128,6 +130,8 @@ export async function buildApp() {
   await app.register(tutorialExerciseRoutes, { prefix: '/api/v1' });
   await app.register(likesRoutes, { prefix: '/api/v1' });
   await app.register(bookmarksRoutes, { prefix: '/api/v1' });
+  await app.register(categoryRoutes, { prefix: '/api/v1/categories' });
+  await app.register(tagRoutes, { prefix: '/api/v1/tags' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

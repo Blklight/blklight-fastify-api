@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 10 complete — likes and bookmarks implemented.
+Session 11 complete — tags and categories implemented.
 
 ## Tech Stack
 
@@ -61,6 +61,14 @@ src/
       bookmarks.routes.ts - Bookmark route handlers
       bookmarks.service.ts - Bookmark business logic
       bookmarks.schema.ts - Drizzle schema: document_bookmarks
+    categories/
+      categories.routes.ts - Category route handlers (public + admin)
+      categories.service.ts - Category business logic
+      categories.schema.ts - Drizzle schema: categories, document_categories
+    tags/
+      tags.routes.ts - Tag route handlers (public)
+      tags.service.ts - Tag business logic
+      tags.schema.ts - Drizzle schema: tags, document_tags
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -235,6 +243,42 @@ Unique constraint: (user_id, document_id)
 
 Unique constraint: (user_id, document_id)
 
+### categories
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| name | text | not null |
+| slug | text | unique, not null |
+| description | text | nullable |
+| parent_id | text | self-referential, nullable (hierarchy) |
+| created_at | timestamp | default now() |
+
+### tags
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| name | text | unique, not null (normalized to lowercase) |
+| slug | text | unique, not null |
+| created_at | timestamp | default now() |
+
+### document_categories
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| document_id | text | foreign key → documents.id, unique |
+| category_id | text | foreign key → categories.id |
+| created_at | timestamp | default now() |
+
+### document_tags
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| document_id | text | foreign key → documents.id |
+| tag_id | text | foreign key → tags.id |
+| created_at | timestamp | default now() |
+
+Unique constraint: (document_id, tag_id)
+
 ## Available Scripts
 
 | Script | Description |
@@ -312,6 +356,16 @@ API docs at http://localhost:3000/docs
 - **liked_by_me is null for unauthenticated requests** — not false
 - **Bookmarks are always private** — only owner can see their bookmarks
 - **toggleLike and toggleBookmark are idempotent** — safe to call multiple times
+- **Tags are globally shared via upsert** — same tag name = same tag record globally
+- **Tag names are normalized** — trim + lowercase before storage
+- **Maximum 5 tags per document** — enforced in setDocumentTags()
+- **setDocumentTags always replaces** — deletes existing then inserts new
+- **Category is required on publish** — ValidationError thrown if no category assigned
+- **One category per document** — setDocumentCategory replaces existing assignment
+- **Categories are hierarchical** — optional parent_id for nested categories
+- **Deleted categories reparent children to root** — done in same transaction
+- **Public feed supports category and tag filters** — ?category=slug&tag=slug query params
+- **DocumentCard and DocumentFull include category and tags** — always fetched on read
 
 ## Response Format
 
@@ -364,6 +418,9 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
 | GET | /api/v1/documents/:username/:slug | Full public document (includes exercises for tutorials) |
 | GET | /api/v1/profiles/:username | Get public profile |
 | GET | /api/v1/profiles/:username/documents | Author's published documents (cursor pagination) |
+| GET | /api/v1/categories | Get all categories (hierarchical) |
+| GET | /api/v1/categories/:slug | Get a category by slug |
+| GET | /api/v1/tags/popular | Get popular tags sorted by usage |
 
 ## Document Routes
 
@@ -372,8 +429,10 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
 | GET | /api/v1/documents/me | Yes | List my documents (paginated) |
 | POST | /api/v1/documents | Yes | Create document |
 | PATCH | /api/v1/documents/:id | Yes | Update document |
-| PATCH | /api/v1/documents/:id/publish | Yes | Publish document |
+| PATCH | /api/v1/documents/:id/publish | Yes | Publish document (requires category) |
 | DELETE | /api/v1/documents/:id | Yes | Soft delete document |
+
+Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?category=slug&tag=slug` filters.
 
 ## Document Style Template Routes
 
@@ -437,6 +496,22 @@ All auth routes return `{ data, error, message }` format. Refresh token is store
 | POST | /api/v1/documents/:id/bookmark | Yes | Toggle bookmark on a document |
 | GET | /api/v1/bookmarks/me | Yes | List my bookmarks (paginated) |
 
+## Categories Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/categories | No | Get all categories (hierarchical tree) |
+| GET | /api/v1/categories/:slug | No | Get a category by slug |
+| POST | /api/v1/categories | Admin | Create a category |
+| PATCH | /api/v1/categories/:id | Admin | Update a category |
+| DELETE | /api/v1/categories/:id | Admin | Delete a category |
+
+## Tags Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/tags/popular | No | Get popular tags (sorted by document count) |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -454,10 +529,10 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Books feature (Session 11)
-- Highlights feature (Session 12)
-- Journals feature (Session 13)
-- Follows feature (Session 14)
+- Books feature (Session 12)
+- Highlights feature (Session 13)
+- Journals feature (Session 14)
+- Follows feature (Session 15)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)

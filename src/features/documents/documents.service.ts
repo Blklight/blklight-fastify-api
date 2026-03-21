@@ -5,10 +5,14 @@ import { documents, documentTypes, documentStyles, Document, NewDocument, NewDoc
 import { profiles } from '../profiles/profiles.schema';
 import { users } from '../auth/auth.schema';
 import { documentLikes } from '../likes/likes.schema';
+import { categories, documentCategories } from '../categories/categories.schema';
+import { tags as tagsTable, documentTags } from '../tags/tags.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import { getLikesCount } from '../likes/likes.service';
+import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
+import { getDocumentCategory, setDocumentCategory } from '../categories/categories.service';
 import type { CreateDocumentInput, UpdateDocumentInput } from './documents.zod';
 import type { NewProfile } from '../profiles/profiles.schema';
 
@@ -184,6 +188,17 @@ export async function createDocument(
     await tx.insert(documentStyles).values(newStyle);
   });
 
+  if (data.categoryId || (data.tags && data.tags.length > 0)) {
+    await db.transaction(async (tx) => {
+      if (data.categoryId) {
+        await setDocumentCategory(documentId, data.categoryId);
+      }
+      if (data.tags && data.tags.length > 0) {
+        await setDocumentTags(documentId, data.tags);
+      }
+    });
+  }
+
   return getDocumentById(documentId, authorId);
 }
 
@@ -275,6 +290,26 @@ export async function updateDocument(
     }
   });
 
+  if (data.categoryId !== undefined || data.tags !== undefined) {
+    if (data.categoryId !== undefined) {
+      if (data.categoryId) {
+        await setDocumentCategory(documentId, data.categoryId);
+      } else {
+        const { removeDocumentCategory } = await import('../categories/categories.service');
+        await removeDocumentCategory(documentId);
+      }
+    }
+    if (data.tags !== undefined) {
+      if (data.tags.length > 0) {
+        await setDocumentTags(documentId, data.tags);
+      } else {
+        const { db: txDb } = await import('../../db/index');
+        const { documentTags: dt } = await import('../tags/tags.schema');
+        await txDb.delete(dt).where(eq(dt.documentId, documentId));
+      }
+    }
+  }
+
   return getDocumentById(documentId, authorId);
 }
 
@@ -300,6 +335,11 @@ export async function publishDocument(
 
   if (!existingDoc.content) {
     throw new ValidationError('Cannot publish empty document');
+  }
+
+  const category = await getDocumentCategory(documentId);
+  if (!category) {
+    throw new ValidationError('A category is required to publish');
   }
 
   const profileResult = await db
@@ -469,6 +509,8 @@ export interface FeedParams {
   author?: string;
   q?: string;
   sort?: 'recent' | 'popular';
+  category?: string;
+  tag?: string;
 }
 
 export interface FeedResult {
@@ -494,6 +536,16 @@ export interface DocumentCard {
     publicIdentifier: string;
   };
   likesCount: number;
+  category: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+  tags: {
+    id: string;
+    name: string;
+    slug: string;
+  }[];
 }
 
 export interface AuthorFeedParams {
@@ -530,12 +582,22 @@ export interface DocumentFull {
     likesCount: number;
     likedByMe: boolean | null;
   };
+  category: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+  tags: {
+    id: string;
+    name: string;
+    slug: string;
+  }[];
   exercises?: unknown[];
 }
 
 /**
  * Get public feed of published documents with cursor-based pagination.
- * @param params - Feed parameters (cursor, limit, type, author, q, sort)
+ * @param params - Feed parameters (cursor, limit, type, author, q, sort, category, tag)
  * @returns Feed result with items, nextCursor, and total count
  */
 export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
@@ -560,7 +622,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
 
   const likesSubquery = sql<number>`(SELECT COUNT(*) FROM document_likes WHERE document_id = ${documents.id})`;
 
-  let query = db
+  let baseQuery = db
     .select({
       id: documents.id,
       title: documents.title,
@@ -578,32 +640,13 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
-    .innerJoin(users, eq(profiles.userId, users.id))
-    .where(and(...conditions))
-    .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
-    .limit(limit + 1);
+    .innerJoin(users, eq(profiles.userId, users.id));
+
+  let results: any[];
 
   if (params.q) {
     const searchPattern = `%${params.q}%`;
-    query = db
-      .select({
-        id: documents.id,
-        title: documents.title,
-        abstract: documents.abstract,
-        coverImageUrl: documents.coverImageUrl,
-        slug: documents.slug,
-        publishedAt: documents.publishedAt,
-        typeName: documentTypes.name,
-        username: profiles.username,
-        displayName: profiles.displayName,
-        avatarUrl: profiles.avatarUrl,
-        authorship: documents.authorship,
-        likesCount: likesSubquery,
-      })
-      .from(documents)
-      .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
-      .innerJoin(profiles, eq(documents.authorId, profiles.id))
-      .innerJoin(users, eq(profiles.userId, users.id))
+    results = await baseQuery
       .where(
         and(
           ...conditions,
@@ -614,50 +657,85 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
         )
       )
       .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
-      .limit(limit + 1) as typeof query;
+      .limit(limit + 1);
+  } else {
+    results = await baseQuery
+      .where(and(...conditions))
+      .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
+      .limit(limit + 1);
   }
 
-  const results = await query;
+  if (params.category || params.tag) {
+    let filtered: string[] = results.map((r) => r.id);
+    if (params.category) {
+      const catDocs = await db
+        .select({ documentId: documentCategories.documentId })
+        .from(documentCategories)
+        .innerJoin(categories, eq(documentCategories.categoryId, categories.id))
+        .where(eq(categories.slug, params.category));
+
+      filtered = filtered.filter((id) => catDocs.some((c) => c.documentId === id));
+    }
+    if (params.tag) {
+      const tagDocs = await db
+        .select({ documentId: documentTags.documentId })
+        .from(documentTags)
+        .innerJoin(tagsTable, eq(documentTags.tagId, tagsTable.id))
+        .where(eq(tagsTable.slug, params.tag));
+
+      filtered = filtered.filter((id) => tagDocs.some((t) => t.documentId === id));
+    }
+    results = results.filter((r) => filtered.includes(r.id));
+  }
 
   const hasMore = results.length > limit;
   if (hasMore) {
     results.pop();
   }
 
-  const items: DocumentCard[] = results.map((r) => {
-    const authorship = r.authorship as Authorship | null;
-    return {
-      id: r.id,
-      title: r.title,
-      abstract: r.abstract,
-      coverImageUrl: r.coverImageUrl,
-      slug: r.slug,
-      publishedAt: r.publishedAt as Date,
-      typeName: r.typeName,
-      author: {
-        username: r.username,
-        displayName: r.displayName,
-        avatarUrl: r.avatarUrl,
-      },
-      authorship: {
-        publicIdentifier: authorship?.publicIdentifier ?? '',
-      },
-      likesCount: Number(r.likesCount ?? 0),
-    };
-  });
+  const items: DocumentCard[] = await Promise.all(
+    results.map(async (r) => {
+      const authorship = r.authorship as Authorship | null;
+      const docTags = await getDocumentTags(r.id);
+      const docCategory = await getDocumentCategory(r.id);
+      return {
+        id: r.id,
+        title: r.title,
+        abstract: r.abstract,
+        coverImageUrl: r.coverImageUrl,
+        slug: r.slug,
+        publishedAt: r.publishedAt as Date,
+        typeName: r.typeName,
+        author: {
+          username: r.username,
+          displayName: r.displayName,
+          avatarUrl: r.avatarUrl,
+        },
+        authorship: {
+          publicIdentifier: authorship?.publicIdentifier ?? '',
+        },
+        likesCount: Number(r.likesCount ?? 0),
+        category: docCategory
+          ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
+          : null,
+        tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
+      };
+    })
+  );
 
   const lastResult = results[results.length - 1];
   const nextCursor = hasMore && lastResult
     ? encodeCursor(lastResult.publishedAt as Date, lastResult.id)
     : null;
 
+  let countConditions = [...conditions];
   let countQuery = db
     .select({ count: count() })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
     .innerJoin(users, eq(profiles.userId, users.id))
-    .where(and(...conditions));
+    .where(and(...countConditions));
 
   if (params.q) {
     const searchPattern = `%${params.q}%`;
@@ -669,7 +747,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
       .innerJoin(users, eq(profiles.userId, users.id))
       .where(
         and(
-          ...conditions,
+          ...countConditions,
           or(
             ilike(documents.title, searchPattern),
             ilike(documents.abstract, searchPattern)
@@ -679,7 +757,12 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
   }
 
   const totalResult = await countQuery;
-  const total = Number(totalResult[0]?.count ?? 0);
+  let total = Number(totalResult[0]?.count ?? 0);
+
+  if (params.category || params.tag) {
+    const docIds = results.map((r) => r.id);
+    total = docIds.length;
+  }
 
   return { items, nextCursor, total };
 }
@@ -729,6 +812,8 @@ export async function getPublicDocument(username: string, slug: string, userId?:
 
   const doc = docResult[0]!;
   const likesData = await getLikesCount(doc.id, userId);
+  const docTags = await getDocumentTags(doc.id);
+  const docCategory = await getDocumentCategory(doc.id);
 
   const styleResult = await db
     .select()
@@ -774,6 +859,10 @@ export async function getPublicDocument(username: string, slug: string, userId?:
       likesCount: likesData.likesCount,
       likedByMe: likesData.likedByMe,
     },
+    category: docCategory
+      ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
+      : null,
+    tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
   };
 
   if (doc.typeName === 'tutorial') {
@@ -855,27 +944,35 @@ export async function getAuthorPublicDocuments(username: string, params: AuthorF
     results.pop();
   }
 
-  const items: DocumentCard[] = results.map((r) => {
-    const authorship = r.authorship as Authorship | null;
-    return {
-      id: r.id,
-      title: r.title,
-      abstract: r.abstract,
-      coverImageUrl: r.coverImageUrl,
-      slug: r.slug,
-      publishedAt: r.publishedAt as Date,
-      typeName: r.typeName,
-      author: {
-        username: r.username,
-        displayName: r.displayName,
-        avatarUrl: r.avatarUrl,
-      },
-      authorship: {
-        publicIdentifier: authorship?.publicIdentifier ?? '',
-      },
-      likesCount: Number(r.likesCount ?? 0),
-    };
-  });
+  const items: DocumentCard[] = await Promise.all(
+    results.map(async (r) => {
+      const authorship = r.authorship as Authorship | null;
+      const docTags = await getDocumentTags(r.id);
+      const docCategory = await getDocumentCategory(r.id);
+      return {
+        id: r.id,
+        title: r.title,
+        abstract: r.abstract,
+        coverImageUrl: r.coverImageUrl,
+        slug: r.slug,
+        publishedAt: r.publishedAt as Date,
+        typeName: r.typeName,
+        author: {
+          username: r.username,
+          displayName: r.displayName,
+          avatarUrl: r.avatarUrl,
+        },
+        authorship: {
+          publicIdentifier: authorship?.publicIdentifier ?? '',
+        },
+        likesCount: Number(r.likesCount ?? 0),
+        category: docCategory
+          ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
+          : null,
+        tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
+      };
+    })
+  );
 
   const lastResult = results[results.length - 1];
   const nextCursor = hasMore && lastResult
