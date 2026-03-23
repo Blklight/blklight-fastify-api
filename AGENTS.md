@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 16 complete — follows system implemented.
+Session 17 complete — OAuth & Account Linking implemented.
 
 ## Tech Stack
 
@@ -143,6 +143,7 @@ src/
 | role | text | 'user' or 'admin' |
 | github_id | text | unique, nullable |
 | google_id | text | unique, nullable |
+| onboarding_complete | boolean | default false (set true after username chosen) |
 | deleted_at | timestamp | nullable (soft delete) |
 | created_at | timestamp | default now() |
 | updated_at | timestamp | default now() |
@@ -612,6 +613,21 @@ API docs at http://localhost:3000/docs
 
 All auth routes return `{ data, error, message }` format. Refresh token is stored in httpOnly cookie.
 
+## OAuth Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/auth/github | No | Redirect to GitHub OAuth |
+| GET | /api/v1/auth/github/callback | No | GitHub OAuth callback |
+| GET | /api/v1/auth/github/link | Yes | Start GitHub account linking |
+| GET | /api/v1/auth/github/link/callback | Yes | GitHub linking callback |
+| GET | /api/v1/auth/google | No | Redirect to Google OAuth |
+| GET | /api/v1/auth/google/callback | No | Google OAuth callback |
+| GET | /api/v1/auth/google/link | Yes | Start Google account linking |
+| GET | /api/v1/auth/google/link/callback | Yes | Google linking callback |
+| POST | /api/v1/auth/onboarding | Yes | Complete OAuth user onboarding |
+| DELETE | /api/v1/auth/account/unlink/:provider | Yes | Unlink OAuth provider |
+
 ## Profile Routes
 
 | Method | Endpoint | Auth | Description |
@@ -817,12 +833,22 @@ Set on publish, null while draft:
 }
 ```
 
+## OAuth
+
+- **Providers:** GitHub and Google via `@fastify/oauth2`
+- **New OAuth users:** created with `onboardingComplete=false`, redirected to frontend onboarding to choose username
+- **Existing OAuth accounts:** checked by provider ID first, then by email (ConflictError if email exists)
+- **Account linking:** authenticated users can link GitHub/Google via state param carrying userId
+- **Onboarding POST:** creates profiles, signatures, and workspace in same transaction
+- **Unlinking:** blocked if user has only one login method remaining
+- **GitHub email:** fetched from `/user/emails` endpoint if not in primary profile
+- **Temporary JWT:** short-lived token issued to new OAuth users for frontend onboarding flow
+
 ## Next Steps
 
-- Tests (Session 17)
+- Tests (future)
 - Comments (future)
 - Sharevault (future)
-- OAuth (future)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
 - Email verification

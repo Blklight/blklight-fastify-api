@@ -6,6 +6,7 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import scalar from '@scalar/fastify-api-reference';
+import oauth2 from '@fastify/oauth2';
 import { env } from './config/env';
 import { AppError, ValidationError } from './utils/errors';
 import authRoutes from './features/auth/auth.routes';
@@ -24,6 +25,7 @@ import workspaceRoutes from './features/workspace/workspace.routes';
 import noteRoutes from './features/notes/notes.routes';
 import journalRoutes from './features/journals/journals.routes';
 import followRoutes from './features/follows/follows.routes';
+import oauthRoutes from './features/auth/oauth.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -60,6 +62,32 @@ export async function buildApp() {
   await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
 
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+
+  await app.register(oauth2, {
+    name: 'githubOAuth2',
+    scope: ['user:email'],
+    credentials: {
+      client: {
+        id: env.GITHUB_CLIENT_ID,
+        secret: env.GITHUB_CLIENT_SECRET,
+      },
+      auth: oauth2.GITHUB_CONFIGURATION,
+    },
+    callbackUri: `${env.OAUTH_REDIRECT_BASE_URL}/api/v1/auth/github/callback`,
+  });
+
+  await app.register(oauth2, {
+    name: 'googleOAuth2',
+    scope: ['profile', 'email'],
+    credentials: {
+      client: {
+        id: env.GOOGLE_CLIENT_ID,
+        secret: env.GOOGLE_CLIENT_SECRET,
+      },
+      auth: oauth2.GOOGLE_CONFIGURATION,
+    },
+    callbackUri: `${env.OAUTH_REDIRECT_BASE_URL}/api/v1/auth/google/callback`,
+  });
 
   app.decorate('authenticate', async function (request: FastifyRequest, reply: FastifyReply) {
     try {
@@ -131,6 +159,7 @@ export async function buildApp() {
   });
 
   await app.register(authRoutes, { prefix: '/api/v1/auth' });
+  await app.register(oauthRoutes, { prefix: '/api/v1/auth' });
   await app.register(profileRoutes, { prefix: '/api/v1/profiles' });
   await app.register(documentRoutes, { prefix: '/api/v1/documents' });
   await app.register(styleTemplateRoutes, { prefix: '/api/v1/document-style-templates' });
@@ -163,6 +192,14 @@ export async function buildApp() {
 
 declare module 'fastify' {
   interface FastifyInstance {
+    githubOAuth2: {
+      generateAuthorizationUri: (opts?: { scope?: string[]; state?: string }) => Promise<string>;
+      getAccessTokenFromAuthorizationCodeFlow: (opts: { code: string }) => Promise<{ token: { access_token: string } }>;
+    };
+    googleOAuth2: {
+      generateAuthorizationUri: (opts?: { scope?: string[]; state?: string }) => Promise<string>;
+      getAccessTokenFromAuthorizationCodeFlow: (opts: { code: string }) => Promise<{ token: { access_token: string } }>;
+    };
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }

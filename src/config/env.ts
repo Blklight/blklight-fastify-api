@@ -12,6 +12,12 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('*'),
   MAX_SESSIONS_PER_USER: z.coerce.number().int().positive().default(5),
   SIGNATURE_ENCRYPTION_KEY: z.string().min(64, 'SIGNATURE_ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
+  GITHUB_CLIENT_ID: z.string().min(1),
+  GITHUB_CLIENT_SECRET: z.string().min(1),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  OAUTH_REDIRECT_BASE_URL: z.string().url(),
+  FRONTEND_URL: z.string().url(),
 });
 
 const parsed = envSchema.safeParse(process.env);

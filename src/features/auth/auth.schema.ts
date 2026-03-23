@@ -11,6 +11,7 @@ export const users = pgTable('users', {
   role: text('role').default('user').notNull(),
   githubId: text('github_id').unique(),
   googleId: text('google_id').unique(),
+  onboardingComplete: boolean('onboarding_complete').default(true).notNull(),
   deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

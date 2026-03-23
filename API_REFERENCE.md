@@ -768,6 +768,165 @@ Invalidate the current session and clear the refresh token cookie.
 
 ---
 
+## OAuth
+
+### GET /api/v1/auth/github
+
+Redirect to GitHub OAuth authorization page. User will be redirected back to `/api/v1/auth/github/callback`.
+
+**Auth Required:** No
+
+---
+
+### GET /api/v1/auth/github/callback
+
+GitHub OAuth callback. Creates or finds user, issues session, redirects to frontend.
+
+**Auth Required:** No
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | string | GitHub authorization code |
+| state | string | (link flows) `link:{userId}` |
+
+**Redirects:**
+
+- New user without username: `FRONTEND_URL/onboarding?token={jwt}`
+- Existing user: `FRONTEND_URL/dashboard`
+- Error: `FRONTEND_URL/login?error={code}`
+
+---
+
+### GET /api/v1/auth/github/link
+
+Start GitHub account linking for an authenticated user.
+
+**Auth Required:** Yes
+
+**Redirects to:** GitHub authorization page with state=`link:{userId}`
+
+---
+
+### GET /api/v1/auth/github/link/callback
+
+Complete GitHub account linking.
+
+**Auth Required:** Yes
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | string | GitHub authorization code |
+| state | string | Must start with `link:` |
+
+**Redirects:**
+
+- Success: `FRONTEND_URL/settings/account?linked=github`
+- Error: `FRONTEND_URL/settings/account?error={code}`
+
+---
+
+### GET /api/v1/auth/google
+
+Redirect to Google OAuth authorization page.
+
+**Auth Required:** No
+
+---
+
+### GET /api/v1/auth/google/callback
+
+Google OAuth callback. Same flow as GitHub.
+
+**Auth Required:** No
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| code | string | Google authorization code |
+| state | string | (link flows) `link:{userId}` |
+
+**Redirects:** Same as GitHub callback.
+
+---
+
+### GET /api/v1/auth/google/link
+
+Start Google account linking for an authenticated user.
+
+**Auth Required:** Yes
+
+---
+
+### GET /api/v1/auth/google/link/callback
+
+Complete Google account linking.
+
+**Auth Required:** Yes
+
+**Redirects:** Same pattern as GitHub link callback.
+
+---
+
+### POST /api/v1/auth/onboarding
+
+Complete OAuth user onboarding by choosing a username. Creates profile, signature, and workspace.
+
+**Auth Required:** Yes (token from OAuth onboarding redirect)
+
+**Request Body:**
+```json
+{
+  "username": "johndoe"
+}
+```
+
+**Validation:** 3-30 chars, letters/numbers/underscores only
+
+**Example Response (201):**
+```json
+{
+  "data": {
+    "accessToken": "eyJ..."
+  },
+  "error": null,
+  "message": "Onboarding complete"
+}
+```
+
+**Error Codes:** `VALIDATION_ERROR`, `CONFLICT` (username taken), `UNAUTHORIZED`
+
+---
+
+### DELETE /api/v1/auth/account/unlink/:provider
+
+Unlink an OAuth provider from your account.
+
+**Auth Required:** Yes
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| provider | string | `github` or `google` |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Provider unlinked successfully"
+}
+```
+
+**Error Codes:** `VALIDATION_ERROR` (last login method), `UNAUTHORIZED`
+
+---
+
 ## Profiles
 
 ### GET /api/v1/profiles/:username

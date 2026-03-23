@@ -8,6 +8,7 @@ import { workspaces } from '../workspace/workspace.schema';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError } from '../../utils/errors';
 import { env } from '../../config/env';
+import type { FastifyReply } from 'fastify';
 
 function parseExpiration(expiresIn: string): Date {
   const match = expiresIn.match(/^(\d+)([smhd])$/);
@@ -85,6 +86,21 @@ async function createSession(userId: string): Promise<string> {
   await db.insert(sessions).values(newSession);
 
   return refreshToken;
+}
+
+export async function createSessionWithReply(userId: string, reply: FastifyReply): Promise<void> {
+  const refreshToken = await createSession(userId);
+  const maxAge = parseExpiration(env.JWT_REFRESH_EXPIRES_IN);
+  const maxAgeMs = maxAge.getTime() - Date.now();
+  const maxAgeSeconds = Math.floor(maxAgeMs / 1000);
+  
+  reply.setCookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure: env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    path: '/',
+    maxAge: maxAgeSeconds,
+  });
 }
 
 export async function createUser(
@@ -214,6 +230,10 @@ export async function loginUser(
   const isValid = verifyPassword(password, user.passwordHash, user.salt);
   if (!isValid) {
     throw new UnauthorizedError('Invalid email or password');
+  }
+
+  if (!user.onboardingComplete) {
+    throw new UnauthorizedError('Please complete your account setup first.');
   }
 
   const refreshToken = await createSession(user.id);
