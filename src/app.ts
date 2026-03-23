@@ -20,6 +20,8 @@ import tagRoutes from './features/tags/tags.routes';
 import bookRoutes from './features/books/books.routes';
 import highlightRoutes from './features/highlights/highlights.routes';
 import documentHighlightRoutes from './features/highlights/document-highlight.routes';
+import workspaceRoutes from './features/workspace/workspace.routes';
+import noteRoutes from './features/notes/notes.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -138,6 +140,8 @@ export async function buildApp() {
   await app.register(bookRoutes, { prefix: '/api/v1/books' });
   await app.register(highlightRoutes, { prefix: '/api/v1' });
   await app.register(documentHighlightRoutes, { prefix: '/api/v1/documents' });
+  await app.register(workspaceRoutes, { prefix: '/api/v1' });
+  await app.register(noteRoutes, { prefix: '/api/v1/notes' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

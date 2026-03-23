@@ -4,6 +4,7 @@ import { db } from '../../db/index';
 import { users, sessions, NewUser, NewSession, User } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { signatures } from '../signatures/signatures.schema';
+import { workspaces } from '../workspace/workspace.schema';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError } from '../../utils/errors';
 import { env } from '../../config/env';
@@ -155,6 +156,17 @@ export async function createUser(
       userHash,
       secretEncrypted,
       createdAt: now,
+    });
+
+    await tx.insert(workspaces).values({
+      id: createId(),
+      ownerId: userId,
+      type: 'personal',
+      name: `${username}'s workspace`,
+      isPersonal: true,
+      colorLabels: null,
+      createdAt: now,
+      updatedAt: now,
     });
   });
 

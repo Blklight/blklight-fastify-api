@@ -1,0 +1,101 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { updateColorLabelsSchema } from './workspace.zod';
+import { getMyWorkspace, updateColorLabels } from './workspace.service';
+
+export default async function workspaceRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    await app.authenticate(request, reply);
+  });
+
+  app.get('/workspace/me', {
+    schema: {
+      summary: 'Get my workspace',
+      tags: ['workspace'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const workspace = await getMyWorkspace(userId);
+
+    reply.send({
+      data: workspace,
+      error: null,
+      message: 'Workspace retrieved',
+    });
+  });
+
+  app.patch('/workspace/me/color-labels', {
+    schema: {
+      summary: 'Update color labels on my workspace',
+      tags: ['workspace'],
+      body: {
+        type: 'object',
+        required: ['colorLabels'],
+        properties: {
+          colorLabels: {
+            oneOf: [
+              { type: 'null' },
+              {
+                type: 'object',
+                additionalProperties: { type: 'string', minLength: 1, maxLength: 50 },
+                maxProperties: 20,
+              },
+            ],
+          },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const parsed = updateColorLabelsSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    await updateColorLabels(userId, parsed.data.colorLabels);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Color labels updated',
+    });
+  });
+}

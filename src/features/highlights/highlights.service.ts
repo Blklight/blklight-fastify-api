@@ -267,7 +267,7 @@ export async function getMyHighlights(
   let results: any[];
 
   if (params.cursor) {
-    const { publishedAt, id } = decodeCursor(params.cursor);
+    const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
     results = await db
       .select({
         id: highlights.id,

@@ -36,7 +36,7 @@ export async function getMyBookmarks(userId: string, params: BookmarkParams): Pr
   conditions.push(eq(documentBookmarks.userId, userId));
 
   if (params.cursor) {
-    const { publishedAt, id } = decodeCursor(params.cursor);
+    const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
     conditions.push(lt(documents.publishedAt, publishedAt));
   }
 

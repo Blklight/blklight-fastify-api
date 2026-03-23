@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 13 complete — highlights feature implemented.
+Session 14 complete — workspace and notes implemented.
 
 ## Tech Stack
 
@@ -79,6 +79,16 @@ src/
       highlights.service.ts - Highlight business logic
       highlights.schema.ts - Drizzle schema: highlights, highlight_palette
       highlights.zod.ts - Zod validation schemas
+    workspace/
+      workspace.routes.ts - Workspace route handlers
+      workspace.service.ts - Workspace business logic
+      workspace.schema.ts - Drizzle schema: workspaces, workspace_members
+      workspace.zod.ts - Zod validation schemas
+    notes/
+      notes.routes.ts - Note route handlers
+      notes.service.ts - Note business logic
+      notes.schema.ts - Drizzle schema: notes
+      notes.zod.ts - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -91,6 +101,7 @@ src/
   config/
     env.ts          - Environment variable validation with Zod
     highlight-palette.ts - Default highlight color palette (5 colors)
+    note-colors.ts  - Valid Tailwind color names for notes
   app.ts            - Fastify instance: plugins, hooks, error handler
 ```
 
@@ -359,36 +370,40 @@ Unique constraint: (user_id, book_id)
 
 Unique constraint: (user_id, chapter_id)
 
-### highlights
+### workspaces
 | Column | Type | Notes |
 |--------|------|-------|
 | id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| document_id | text | foreign key → documents.id |
-| selection | jsonb | { text, color, position } — see below |
-| annotation | jsonb | nullable, TipTap JSON rich text |
+| owner_id | text | unique, foreign key → users.id |
+| type | text | 'personal' \| 'team' |
+| name | text | not null |
+| is_personal | boolean | default true |
+| color_labels | jsonb | nullable (user's personal color categorization) |
 | created_at | timestamp | default now() |
 | updated_at | timestamp | default now() |
 
-**selection jsonb shape:**
-```json
-{
-  "text": "highlighted text content",
-  "color": "#FFF176",
-  "position": {
-    "nodeIndex": 0,
-    "offsetStart": 10,
-    "offsetEnd": 45
-  }
-}
-```
-
-### highlight_palette
+### workspace_members
 | Column | Type | Notes |
 |--------|------|-------|
 | id | text | CUID2, primary key |
-| user_id | text | unique, foreign key → users.id |
-| colors | jsonb | array of 5 hex strings |
+| workspace_id | text | foreign key → workspaces.id |
+| user_id | text | foreign key → users.id |
+| role | text | 'owner' \| 'admin' \| 'member' |
+| created_at | timestamp | default now() |
+
+Unique constraint: (workspace_id, user_id)
+
+### notes
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| workspace_id | text | foreign key → workspaces.id |
+| title | text | nullable |
+| content | text | markdown string |
+| type | text | 'text' \| 'code' \| 'list' |
+| language | text | nullable (required when type = 'code') |
+| color | text | Tailwind color name, default 'yellow' |
+| deleted_at | timestamp | nullable (soft delete) |
 | created_at | timestamp | default now() |
 | updated_at | timestamp | default now() |
 
@@ -495,6 +510,17 @@ API docs at http://localhost:3000/docs
 - **getMyHighlights() groups by document** — for the highlights dashboard view
 - **highlight_palette uses upsert** — one row per user
 - **Highlights are independent** — journal relation added in Session 14
+- **Every user has exactly one personal workspace** — is_personal = true, created atomically in register transaction
+- **Workspace created atomically in register transaction** — users + profiles + signatures + workspaces (4 tables)
+- **workspace_members table exists but has no routes** — reserved for future team workspaces
+- **Notes belong to workspace via workspace_id** — never directly to users
+- **resolveWorkspaceId() is the internal bridge** — userId → workspaceId for all notes operations
+- **color_labels is optional jsonb in workspaces** — keys are NOTE_COLORS, values are free text labels
+- **Passing null to updateColorLabels() clears all labels**
+- **NOTE_COLORS imported from src/config/note-colors.ts** — never hardcoded
+- **language field required when note type is 'code'** — enforced in Zod .refine()
+- **Notes are soft-deleted** — deleted_at set, never hard deleted
+- **cursor.ts now uses generic timestamp field** — works for any date column (published_at, updated_at, created_at)
 
 ## Response Format
 
@@ -671,6 +697,23 @@ Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?catego
 | GET | /api/v1/highlights/palette | Yes | Get my highlight palette |
 | PATCH | /api/v1/highlights/palette | Yes | Update my highlight palette |
 
+## Workspace Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/workspace/me | Yes | Get my workspace with counts |
+| PATCH | /api/v1/workspace/me/color-labels | Yes | Update color labels |
+
+## Notes Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | /api/v1/notes | Yes | Create a note |
+| GET | /api/v1/notes | Yes | List my notes (paginated, filterable) |
+| GET | /api/v1/notes/:id | Yes | Get a note by ID |
+| PATCH | /api/v1/notes/:id | Yes | Update a note |
+| DELETE | /api/v1/notes/:id | Yes | Soft delete a note |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -688,9 +731,10 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Journals feature (Session 14)
-- Follows feature (Session 15)
-- Tests (Session 16)
+- Journals feature (Session 15)
+- Follows feature (Session 16)
+- Sharevault (future)
+- Tests (future)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)

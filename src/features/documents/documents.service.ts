@@ -616,7 +616,7 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
   }
 
   if (params.cursor) {
-    const { publishedAt, id } = decodeCursor(params.cursor);
+    const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
     conditions.push(lt(documents.publishedAt, publishedAt));
   }
 
@@ -911,7 +911,7 @@ export async function getAuthorPublicDocuments(username: string, params: AuthorF
   }
 
   if (params.cursor) {
-    const { publishedAt, id } = decodeCursor(params.cursor);
+    const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
     conditions.push(lt(documents.publishedAt, publishedAt));
   }
 

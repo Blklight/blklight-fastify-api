@@ -827,7 +827,7 @@ export async function getPublicBookFeed(params: BookFeedParams): Promise<BookFee
   conditions.push(isNull(books.deletedAt));
 
   if (params.cursor) {
-    const { publishedAt, id } = decodeCursor(params.cursor);
+    const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
     conditions.push(sql`${books.updatedAt} < ${publishedAt}`);
   }
 
