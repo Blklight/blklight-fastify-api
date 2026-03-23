@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 14 complete — workspace and notes implemented.
+Session 15 complete — journals feature implemented.
 
 ## Tech Stack
 
@@ -89,6 +89,11 @@ src/
       notes.service.ts - Note business logic
       notes.schema.ts - Drizzle schema: notes
       notes.zod.ts - Zod validation schemas
+    journals/
+      journals.routes.ts - Journal route handlers
+      journals.service.ts - Journal business logic
+      journals.schema.ts - Drizzle schema: journals, journal_highlights
+      journals.zod.ts - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -407,6 +412,30 @@ Unique constraint: (workspace_id, user_id)
 | created_at | timestamp | default now() |
 | updated_at | timestamp | default now() |
 
+### journals
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| workspace_id | text | foreign key → workspaces.id |
+| title | text | not null, max 200 |
+| description | text | nullable, max 500 |
+| color | text | default 'indigo', must be NOTE_COLORS |
+| deleted_at | timestamp | nullable (soft delete) |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+### journal_highlights
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| journal_id | text | foreign key → journals.id |
+| highlight_id | text | foreign key → highlights.id |
+| position | integer | order within the journal |
+| created_at | timestamp | default now() |
+
+Unique constraint: (journal_id, highlight_id)
+Unique constraint: (journal_id, position)
+
 ## Available Scripts
 
 | Script | Description |
@@ -521,6 +550,13 @@ API docs at http://localhost:3000/docs
 - **language field required when note type is 'code'** — enforced in Zod .refine()
 - **Notes are soft-deleted** — deleted_at set, never hard deleted
 - **cursor.ts now uses generic timestamp field** — works for any date column (published_at, updated_at, created_at)
+- **Maximum 2 journals per user** — hard limit enforced in createJournal()
+- **Journals belong to workspace via workspace_id** — never directly to users
+- **Highlights added manually** — never auto-populated
+- **Removing a highlight from journal does NOT delete the highlight itself** — only the journal reference
+- **journal_highlights rows kept on journal soft delete** — preserves highlight refs if journal is restored
+- **Reorder uses transaction** — positions updated atomically
+- **Colors use NOTE_COLORS** — for consistency with notes
 
 ## Response Format
 
@@ -714,6 +750,19 @@ Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?catego
 | PATCH | /api/v1/notes/:id | Yes | Update a note |
 | DELETE | /api/v1/notes/:id | Yes | Soft delete a note |
 
+## Journals Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | /api/v1/journals | Yes | Create a journal (max 2) |
+| GET | /api/v1/journals | Yes | List my journals |
+| GET | /api/v1/journals/:id | Yes | Get a journal with highlights |
+| PATCH | /api/v1/journals/:id | Yes | Update a journal |
+| DELETE | /api/v1/journals/:id | Yes | Soft delete a journal |
+| POST | /api/v1/journals/:id/highlights | Yes | Add highlight to journal |
+| DELETE | /api/v1/journals/:id/highlights/:highlightId | Yes | Remove highlight from journal |
+| PATCH | /api/v1/journals/:id/highlights/reorder | Yes | Reorder highlights |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -731,10 +780,10 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Journals feature (Session 15)
 - Follows feature (Session 16)
+- Tests (Session 17)
 - Sharevault (future)
-- Tests (future)
+- Comments (future)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
 - OAuth integration (GitHub, Google)

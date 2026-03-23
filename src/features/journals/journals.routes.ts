@@ -1,0 +1,430 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import {
+  CreateJournalSchema,
+  UpdateJournalSchema,
+  AddHighlightSchema,
+  ReorderHighlightsSchema,
+} from './journals.zod';
+import {
+  createJournal,
+  updateJournal,
+  deleteJournal,
+  getMyJournals,
+  getJournalById,
+  addHighlightToJournal,
+  removeHighlightFromJournal,
+  reorderHighlights,
+} from './journals.service';
+
+export default async function journalRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    await app.authenticate(request, reply);
+  });
+
+  app.post('/', {
+    schema: {
+      summary: 'Create a journal',
+      tags: ['journals'],
+      body: {
+        type: 'object',
+        required: ['title'],
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 200 },
+          description: { type: 'string', maxLength: 500 },
+          color: { type: 'string', default: 'indigo' },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const parsed = CreateJournalSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const journal = await createJournal(userId, parsed.data);
+
+    reply.code(201).send({
+      data: journal,
+      error: null,
+      message: 'Journal created',
+    });
+  });
+
+  app.get('/', {
+    schema: {
+      summary: 'Get my journals',
+      tags: ['journals'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'array' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { userId } = request.user;
+
+    const journals = await getMyJournals(userId);
+
+    reply.send({
+      data: journals,
+      error: null,
+      message: 'Journals retrieved',
+    });
+  });
+
+  app.get('/:id', {
+    schema: {
+      summary: 'Get a journal by ID',
+      tags: ['journals'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+
+    const journal = await getJournalById(userId, id);
+
+    reply.send({
+      data: journal,
+      error: null,
+      message: 'Journal retrieved',
+    });
+  });
+
+  app.patch('/:id', {
+    schema: {
+      summary: 'Update a journal',
+      tags: ['journals'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 200 },
+          description: { type: 'string', maxLength: 500 },
+          color: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+    const parsed = UpdateJournalSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const journal = await updateJournal(userId, id, parsed.data);
+
+    reply.send({
+      data: journal,
+      error: null,
+      message: 'Journal updated',
+    });
+  });
+
+  app.delete('/:id', {
+    schema: {
+      summary: 'Delete a journal',
+      tags: ['journals'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+
+    await deleteJournal(userId, id);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Journal deleted',
+    });
+  });
+
+  app.post('/:id/highlights', {
+    schema: {
+      summary: 'Add a highlight to a journal',
+      tags: ['journals'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        required: ['highlightId'],
+        properties: {
+          highlightId: { type: 'string' },
+          position: { type: 'integer', minimum: 0 },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+    const parsed = AddHighlightSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const journalHighlight = await addHighlightToJournal(userId, id, parsed.data);
+
+    reply.code(201).send({
+      data: journalHighlight,
+      error: null,
+      message: 'Highlight added to journal',
+    });
+  });
+
+  app.delete('/:id/highlights/:highlightId', {
+    schema: {
+      summary: 'Remove a highlight from a journal',
+      tags: ['journals'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          highlightId: { type: 'string' },
+        },
+        required: ['id', 'highlightId'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string; highlightId: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id, highlightId } = request.params;
+
+    await removeHighlightFromJournal(userId, id, highlightId);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Highlight removed from journal',
+    });
+  });
+
+  app.patch('/:id/highlights/reorder', {
+    schema: {
+      summary: 'Reorder highlights in a journal',
+      tags: ['journals'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        required: ['highlights'],
+        properties: {
+          highlights: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                position: { type: 'integer', minimum: 0 },
+              },
+              required: ['id', 'position'],
+            },
+          },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+    const parsed = ReorderHighlightsSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    await reorderHighlights(userId, id, parsed.data);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Highlights reordered',
+    });
+  });
+}

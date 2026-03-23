@@ -2153,6 +2153,315 @@ Delete a highlight.
 
 ---
 
+## Journals (Auth Required)
+
+Journals are personal collections of highlights. Each user can have a maximum of 2 journals.
+
+**Notes:**
+- Maximum 2 journals per account (hard limit enforced in service)
+- Journals belong to the user's personal workspace
+- Highlights are added manually — never auto-populated
+- Removing a highlight from a journal does NOT delete the highlight itself
+- Highlights are ordered by position (ascending)
+
+### POST /api/v1/journals
+
+Create a new journal.
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | Yes | Journal title (max 200 chars) |
+| description | string | No | Description (max 500 chars) |
+| color | string | No | Color from NOTE_COLORS (default: "indigo") |
+
+**Example Request:**
+```json
+{
+  "title": "Reading List",
+  "description": "Highlights from programming tutorials",
+  "color": "indigo"
+}
+```
+
+**Example Response (201):**
+```json
+{
+  "data": {
+    "id": "jrn123abc...",
+    "workspaceId": "ws123abc...",
+    "title": "Reading List",
+    "description": "Highlights from programming tutorials",
+    "color": "indigo",
+    "deletedAt": null,
+    "createdAt": "2024-02-15T10:00:00.000Z",
+    "updatedAt": "2024-02-15T10:00:00.000Z"
+  },
+  "error": null,
+  "message": "Journal created"
+}
+```
+
+**Error Codes:** `VALIDATION_ERROR` (includes limit reached)
+
+---
+
+### GET /api/v1/journals
+
+List all journals for the current user.
+
+**Example Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "jrn123abc...",
+      "workspaceId": "ws123abc...",
+      "title": "Reading List",
+      "description": "Highlights from programming tutorials",
+      "color": "indigo",
+      "deletedAt": null,
+      "createdAt": "2024-02-15T10:00:00.000Z",
+      "updatedAt": "2024-02-15T10:00:00.000Z",
+      "highlightCount": 5
+    }
+  ],
+  "error": null,
+  "message": "Journals retrieved"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`
+
+---
+
+### GET /api/v1/journals/:id
+
+Get a journal with all its highlights.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Journal ID |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "jrn123abc...",
+    "workspaceId": "ws123abc...",
+    "title": "Reading List",
+    "description": "Highlights from programming tutorials",
+    "color": "indigo",
+    "createdAt": "2024-02-15T10:00:00.000Z",
+    "updatedAt": "2024-02-15T10:00:00.000Z",
+    "highlights": [
+      {
+        "id": "jh123abc...",
+        "journalId": "jrn123abc...",
+        "highlightId": "hl456def...",
+        "position": 0,
+        "createdAt": "2024-02-15T10:00:00.000Z",
+        "highlight": {
+          "id": "hl456def...",
+          "userId": "usr789ghi...",
+          "documentId": "doc123abc...",
+          "selection": {
+            "text": "The highlighted text",
+            "color": "yellow",
+            "position": { "nodeIndex": 2, "offsetStart": 10, "offsetEnd": 45 }
+          },
+          "annotation": { "note": "Important concept" },
+          "createdAt": "2024-02-15T10:00:00.000Z",
+          "updatedAt": "2024-02-15T10:00:00.000Z",
+          "document": {
+            "id": "doc123abc...",
+            "title": "Getting Started with TypeScript",
+            "slug": "getting-started-with-typescript",
+            "authorUsername": "johndoe"
+          }
+        }
+      }
+    ]
+  },
+  "error": null,
+  "message": "Journal retrieved"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### PATCH /api/v1/journals/:id
+
+Update a journal.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Journal ID |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | No | Journal title (max 200 chars) |
+| description | string | No | Description (max 500 chars) |
+| color | string | No | Color from NOTE_COLORS |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "id": "jrn123abc...",
+    "title": "Reading List (Updated)",
+    "description": "Updated description",
+    "color": "violet",
+    ...
+  },
+  "error": null,
+  "message": "Journal updated"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### DELETE /api/v1/journals/:id
+
+Soft delete a journal.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Journal ID |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Journal deleted"
+}
+```
+
+**Note:** Journal highlights are preserved in case of restoration.
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### POST /api/v1/journals/:id/highlights
+
+Add a highlight to a journal.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Journal ID |
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| highlightId | string | Yes | The highlight ID to add |
+| position | integer | No | Position in journal (appended at end if omitted) |
+
+**Example Request:**
+```json
+{
+  "highlightId": "hl456def...",
+  "position": 0
+}
+```
+
+**Example Response (201):**
+```json
+{
+  "data": {
+    "id": "jh123abc...",
+    "journalId": "jrn123abc...",
+    "highlightId": "hl456def...",
+    "position": 0,
+    "createdAt": "2024-02-15T10:00:00.000Z"
+  },
+  "error": null,
+  "message": "Highlight added to journal"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `CONFLICT`
+
+---
+
+### DELETE /api/v1/journals/:id/highlights/:highlightId
+
+Remove a highlight from a journal.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Journal ID |
+| highlightId | string | Highlight ID to remove |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Highlight removed from journal"
+}
+```
+
+**Note:** This does NOT delete the highlight itself — only removes the journal reference. Remaining highlights are reordered automatically.
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### PATCH /api/v1/journals/:id/highlights/reorder
+
+Reorder highlights within a journal.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Journal ID |
+
+**Request Body:**
+
+```json
+{
+  "highlights": [
+    { "id": "hl1...", "position": 0 },
+    { "id": "hl2...", "position": 1 },
+    { "id": "hl3...", "position": 2 }
+  ]
+}
+```
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Highlights reordered"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
 ## Error Codes Reference
 
 | Code | HTTP Status | Description |
