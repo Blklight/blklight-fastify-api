@@ -15,8 +15,10 @@ export const updateProfileSchema = z.object({
     .optional(),
   displayName: z.string().max(50).nullable().optional(),
   bio: z.string().max(300).nullable().optional(),
+  bioPrivate: z.string().max(150).nullable().optional(),
   avatarUrl: z.string().url('Invalid URL format').nullable().optional(),
   socialLinks: socialLinksSchema,
+  isPrivate: z.boolean().optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

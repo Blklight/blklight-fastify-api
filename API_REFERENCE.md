@@ -2462,6 +2462,325 @@ Reorder highlights within a journal.
 
 ---
 
+## Follows (Auth Required)
+
+Follow system with support for private profiles.
+
+**Notes:**
+- Profiles can be public (follow immediate) or private (follow requires approval)
+- Private profiles hide content from non-followers
+- `is_following` = true only if status = 'accepted', null for unauthenticated
+- `follow_status` values: 'accepted', 'pending', 'rejected', null
+
+### GET /api/v1/profiles/:username/followers
+
+Get followers of a profile. Returns `{ hidden: true }` for private profiles when viewer is not an accepted follower.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Profile username |
+
+**Example Response (200) - Public Profile:**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "follower": {
+          "id": "prf123...",
+          "username": "johndoe",
+          "displayName": "John Doe",
+          "avatarUrl": "https://example.com/avatar.jpg"
+        },
+        "createdAt": "2024-02-15T10:00:00.000Z"
+      }
+    ],
+    "count": 42
+  },
+  "error": null,
+  "message": "Followers retrieved"
+}
+```
+
+**Example Response (200) - Private Profile (hidden):**
+```json
+{
+  "data": {
+    "hidden": true,
+    "items": [],
+    "count": 0
+  },
+  "error": null,
+  "message": "Followers retrieved"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`
+
+---
+
+### GET /api/v1/profiles/:username/following
+
+Get following list of a profile. Same privacy rules as followers.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Profile username |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "following": {
+          "id": "prf456...",
+          "username": "janedoe",
+          "displayName": "Jane Doe",
+          "avatarUrl": "https://example.com/avatar2.jpg"
+        },
+        "createdAt": "2024-02-15T10:00:00.000Z"
+      }
+    ],
+    "count": 15
+  },
+  "error": null,
+  "message": "Following retrieved"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`
+
+---
+
+### POST /api/v1/profiles/:username/follow
+
+Follow a profile.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Profile username to follow |
+
+**Example Response (201) - Public Profile:**
+```json
+{
+  "data": {
+    "status": "accepted"
+  },
+  "error": null,
+  "message": "Following"
+}
+```
+
+**Example Response (201) - Private Profile:**
+```json
+{
+  "data": {
+    "status": "pending"
+  },
+  "error": null,
+  "message": "Follow request sent"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `VALIDATION_ERROR` (follow yourself), `CONFLICT` (already following/pending)
+
+---
+
+### DELETE /api/v1/profiles/:username/follow
+
+Unfollow a profile.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| username | string | Profile username to unfollow |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Unfollowed"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### GET /api/v1/feed/following
+
+Get a feed of published documents from followed profiles.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| cursor | string | - | Opaque cursor for pagination |
+| limit | integer | 20 | Results per page (max 50) |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "id": "doc123...",
+        "title": "Getting Started with TypeScript",
+        "abstract": "A comprehensive guide",
+        "slug": "getting-started-with-typescript",
+        "publishedAt": "2024-02-15T10:00:00.000Z",
+        "typeName": "article",
+        "author": {
+          "username": "johndoe",
+          "displayName": "John Doe"
+        },
+        "likesCount": 42
+      }
+    ],
+    "nextCursor": "eyJw...",
+    "total": 20
+  },
+  "error": null,
+  "message": "Following feed retrieved"
+}
+```
+
+**Note:** Excludes documents from private profiles where viewer is not an accepted follower.
+
+**Error Codes:** `UNAUTHORIZED`
+
+---
+
+### GET /api/v1/follows/requests
+
+Get pending follow requests (for private profile owners).
+
+**Example Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "flw123...",
+      "follower": {
+        "id": "prf456...",
+        "username": "johndoe",
+        "displayName": "John Doe",
+        "avatarUrl": "https://example.com/avatar.jpg"
+      },
+      "createdAt": "2024-02-15T10:00:00.000Z"
+    }
+  ],
+  "error": null,
+  "message": "Pending requests retrieved"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`
+
+---
+
+### POST /api/v1/follows/requests/:id/accept
+
+Accept a follow request.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Follow request ID |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Follow request accepted"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### DELETE /api/v1/follows/requests/:id/reject
+
+Reject a follow request.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| id | string | Follow request ID |
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Follow request rejected"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
+### GET /api/v1/profiles/:username
+
+Profile response now includes follow-related fields for authenticated requests:
+
+```json
+{
+  "data": {
+    "username": "johndoe",
+    "displayName": "John Doe",
+    "bio": "Hello world",
+    "bioPrivate": "Welcome to my profile",
+    "avatarUrl": "https://example.com/avatar.jpg",
+    "isPrivate": false,
+    "isFollowing": true,
+    "followStatus": "accepted",
+    ...
+  },
+  "error": null,
+  "message": "Profile retrieved"
+}
+```
+
+**Notes:**
+- For private profiles with non-follower: returns limited data (username, displayName, avatarUrl, bioPrivate, isPrivate)
+- `isFollowing`: true if status = 'accepted', null for unauthenticated
+- `followStatus`: 'accepted' | 'pending' | 'rejected' | null
+
+### PATCH /api/v1/profiles/me
+
+Update profile now supports privacy settings:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| isPrivate | boolean | Make profile private (default: false) |
+| bioPrivate | string | Bio shown to non-followers (max 150 chars) |
+
+**Example Request:**
+```json
+{
+  "bio": "Full bio for followers",
+  "bioPrivate": "Welcome! This is a private profile.",
+  "isPrivate": true
+}
+```
+
+---
+
 ## Error Codes Reference
 
 | Code | HTTP Status | Description |

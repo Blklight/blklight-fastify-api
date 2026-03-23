@@ -53,9 +53,13 @@ export default async function profileRoutes(app: FastifyInstance) {
                 username: { type: 'string' },
                 displayName: { type: ['string', 'null'] },
                 bio: { type: ['string', 'null'] },
+                bioPrivate: { type: ['string', 'null'] },
                 avatarUrl: { type: ['string', 'null'] },
                 socialLinks: { type: ['object', 'null'] },
                 createdAt: { type: 'string' },
+                isPrivate: { type: 'boolean' },
+                isFollowing: { type: ['boolean', 'null'] },
+                followStatus: { type: ['string', 'null'] },
               },
             },
             error: { type: 'null' },
@@ -66,7 +70,16 @@ export default async function profileRoutes(app: FastifyInstance) {
     },
   }, async (request: FastifyRequest<{ Params: { username: string } }>, reply: FastifyReply) => {
     const { username } = request.params;
-    const profile = await getPublicProfile(username);
+    let viewerUserId: string | undefined;
+
+    try {
+      await request.jwtVerify();
+      viewerUserId = request.user.userId;
+    } catch {
+      viewerUserId = undefined;
+    }
+
+    const profile = await getPublicProfile(username, viewerUserId);
     reply.send({
       data: {
         ...profile,
@@ -156,9 +169,11 @@ export default async function profileRoutes(app: FastifyInstance) {
                 username: { type: 'string' },
                 displayName: { type: ['string', 'null'] },
                 bio: { type: ['string', 'null'] },
+                bioPrivate: { type: ['string', 'null'] },
                 avatarUrl: { type: ['string', 'null'] },
                 socialLinks: { type: ['object', 'null'] },
                 createdAt: { type: 'string' },
+                isPrivate: { type: 'boolean' },
                 email: { type: 'string' },
                 emailVerified: { type: 'boolean' },
                 role: { type: 'string' },
@@ -194,7 +209,9 @@ export default async function profileRoutes(app: FastifyInstance) {
           username: { type: 'string', minLength: 3, maxLength: 30 },
           displayName: { type: ['string', 'null'] },
           bio: { type: ['string', 'null'], maxLength: 300 },
+          bioPrivate: { type: ['string', 'null'], maxLength: 150 },
           avatarUrl: { type: ['string', 'null'] },
+          isPrivate: { type: 'boolean' },
           socialLinks: {
             type: ['object', 'null'],
             properties: {
@@ -216,9 +233,11 @@ export default async function profileRoutes(app: FastifyInstance) {
                 username: { type: 'string' },
                 displayName: { type: ['string', 'null'] },
                 bio: { type: ['string', 'null'] },
+                bioPrivate: { type: ['string', 'null'] },
                 avatarUrl: { type: ['string', 'null'] },
                 socialLinks: { type: ['object', 'null'] },
                 createdAt: { type: 'string' },
+                isPrivate: { type: 'boolean' },
                 email: { type: 'string' },
                 emailVerified: { type: 'boolean' },
                 role: { type: 'string' },

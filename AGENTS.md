@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 15 complete — journals feature implemented.
+Session 16 complete — follows system implemented.
 
 ## Tech Stack
 
@@ -94,6 +94,10 @@ src/
       journals.service.ts - Journal business logic
       journals.schema.ts - Drizzle schema: journals, journal_highlights
       journals.zod.ts - Zod validation schemas
+    follows/
+      follows.routes.ts - Follow route handlers
+      follows.service.ts - Follow business logic
+      follows.schema.ts - Drizzle schema: follows
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -160,8 +164,10 @@ src/
 | username | text | unique, mirrored from users |
 | display_name | text | nullable |
 | bio | text | nullable |
+| bio_private | text | nullable (shown to non-followers on private profiles) |
 | avatar_url | text | nullable |
 | social_links | jsonb | nullable |
+| is_private | boolean | default false |
 | deleted_at | timestamp | nullable (soft delete) |
 | created_at | timestamp | default now() |
 | updated_at | timestamp | default now() |
@@ -436,6 +442,18 @@ Unique constraint: (workspace_id, user_id)
 Unique constraint: (journal_id, highlight_id)
 Unique constraint: (journal_id, position)
 
+### follows
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| follower_id | text | foreign key → profiles.id |
+| following_id | text | foreign key → profiles.id |
+| status | text | default 'accepted' ('pending' | 'accepted' | 'rejected') |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+Unique constraint: (follower_id, following_id)
+
 ## Available Scripts
 
 | Script | Description |
@@ -557,6 +575,14 @@ API docs at http://localhost:3000/docs
 - **journal_highlights rows kept on journal soft delete** — preserves highlight refs if journal is restored
 - **Reorder uses transaction** — positions updated atomically
 - **Colors use NOTE_COLORS** — for consistency with notes
+- **follows reference profiles.id** — never users.id
+- **Private profiles hide everything** — only accepted followers see content
+- **Follow counts always computed via COUNT(*)** — never stored in profiles
+- **Rejected follow requests are hard deleted** — not kept as 'rejected'
+- **getFollowingFeed excludes documents from private profiles** — where viewer is not an accepted follower
+- **GET /profiles/:username accepts optional auth** — for is_following field
+- **is_following = null for unauthenticated** — not false
+- **follow_status shows pending state** — useful for follow button UI
 
 ## Response Format
 
@@ -763,6 +789,19 @@ Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?catego
 | DELETE | /api/v1/journals/:id/highlights/:highlightId | Yes | Remove highlight from journal |
 | PATCH | /api/v1/journals/:id/highlights/reorder | Yes | Reorder highlights |
 
+## Follows Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | /api/v1/profiles/:username/followers | Optional | Get followers list |
+| GET | /api/v1/profiles/:username/following | Optional | Get following list |
+| POST | /api/v1/profiles/:username/follow | Yes | Follow a profile |
+| DELETE | /api/v1/profiles/:username/follow | Yes | Unfollow a profile |
+| GET | /api/v1/feed/following | Yes | Get following feed |
+| GET | /api/v1/follows/requests | Yes | Get pending requests |
+| POST | /api/v1/follows/requests/:id/accept | Yes | Accept follow request |
+| DELETE | /api/v1/follows/requests/:id/reject | Yes | Reject follow request |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -780,12 +819,11 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Follows feature (Session 16)
 - Tests (Session 17)
-- Sharevault (future)
 - Comments (future)
+- Sharevault (future)
+- OAuth (future)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
-- OAuth integration (GitHub, Google)
 - Email verification
 - Password reset flow

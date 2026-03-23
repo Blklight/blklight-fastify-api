@@ -23,6 +23,7 @@ import documentHighlightRoutes from './features/highlights/document-highlight.ro
 import workspaceRoutes from './features/workspace/workspace.routes';
 import noteRoutes from './features/notes/notes.routes';
 import journalRoutes from './features/journals/journals.routes';
+import followRoutes from './features/follows/follows.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -144,6 +145,7 @@ export async function buildApp() {
   await app.register(workspaceRoutes, { prefix: '/api/v1' });
   await app.register(noteRoutes, { prefix: '/api/v1/notes' });
   await app.register(journalRoutes, { prefix: '/api/v1/journals' });
+  await app.register(followRoutes, { prefix: '/api/v1' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

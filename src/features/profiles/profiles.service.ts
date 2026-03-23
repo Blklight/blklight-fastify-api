@@ -9,12 +9,26 @@ export interface PublicProfile {
   username: string;
   displayName: string | null;
   bio: string | null;
+  bioPrivate: string | null;
   avatarUrl: string | null;
   socialLinks: Record<string, unknown> | null;
   createdAt: Date;
+  isPrivate: boolean;
+  isFollowing: boolean | null;
+  followStatus: 'accepted' | 'pending' | 'rejected' | null;
 }
 
-export interface FullProfile extends PublicProfile {
+export interface FullProfile {
+  username: string;
+  displayName: string | null;
+  bio: string | null;
+  bioPrivate: string | null;
+  avatarUrl: string | null;
+  socialLinks: Record<string, unknown> | null;
+  createdAt: Date;
+  isPrivate: boolean;
+  isFollowing: boolean | null;
+  followStatus: 'accepted' | 'pending' | 'rejected' | null;
   email: string;
   emailVerified: boolean;
   role: string;
@@ -23,18 +37,25 @@ export interface FullProfile extends PublicProfile {
 /**
  * Get a public profile by username.
  * @param username - The username to search for
+ * @param viewerUserId - Optional authenticated user's ID for follow status
  * @returns Public profile data
  * @throws NotFoundError if user or profile is deleted or doesn't exist
  */
-export async function getPublicProfile(username: string): Promise<PublicProfile> {
+export async function getPublicProfile(
+  username: string,
+  viewerUserId?: string
+): Promise<PublicProfile> {
   const result = await db
     .select({
+      id: profiles.id,
       username: profiles.username,
       displayName: profiles.displayName,
       bio: profiles.bio,
+      bioPrivate: profiles.bioPrivate,
       avatarUrl: profiles.avatarUrl,
       socialLinks: profiles.socialLinks,
       createdAt: profiles.createdAt,
+      isPrivate: profiles.isPrivate,
       deletedAt: users.deletedAt,
     })
     .from(profiles)
@@ -52,13 +73,51 @@ export async function getPublicProfile(username: string): Promise<PublicProfile>
     throw new NotFoundError('Profile not found');
   }
 
+  let isFollowing = null;
+  let followStatus = null;
+  let viewerProfileId: string | null = null;
+
+  if (viewerUserId) {
+    const { resolveProfileIdFromUserId } = await import('../follows/follows.service');
+    try {
+      viewerProfileId = await resolveProfileIdFromUserId(viewerUserId);
+    } catch {
+      viewerProfileId = null;
+    }
+  }
+
+  if (viewerProfileId && viewerProfileId !== profile.id) {
+    const { getFollowStatus } = await import('../follows/follows.service');
+    followStatus = await getFollowStatus(viewerProfileId, profile.id);
+    isFollowing = followStatus === 'accepted';
+  }
+
+  if (profile.isPrivate && followStatus !== 'accepted') {
+    return {
+      username: profile.username,
+      displayName: profile.displayName,
+      bio: null,
+      bioPrivate: profile.bioPrivate,
+      avatarUrl: profile.avatarUrl,
+      socialLinks: null,
+      createdAt: new Date(0),
+      isPrivate: profile.isPrivate,
+      isFollowing,
+      followStatus,
+    };
+  }
+
   return {
     username: profile.username,
     displayName: profile.displayName,
     bio: profile.bio,
+    bioPrivate: profile.bioPrivate,
     avatarUrl: profile.avatarUrl,
     socialLinks: profile.socialLinks as Record<string, unknown> | null,
     createdAt: profile.createdAt,
+    isPrivate: profile.isPrivate,
+    isFollowing,
+    followStatus,
   };
 }
 
@@ -74,9 +133,11 @@ export async function getOwnProfile(userId: string): Promise<FullProfile> {
       username: profiles.username,
       displayName: profiles.displayName,
       bio: profiles.bio,
+      bioPrivate: profiles.bioPrivate,
       avatarUrl: profiles.avatarUrl,
       socialLinks: profiles.socialLinks,
       createdAt: profiles.createdAt,
+      isPrivate: profiles.isPrivate,
       email: users.email,
       emailVerified: users.emailVerified,
       role: users.role,
@@ -96,9 +157,13 @@ export async function getOwnProfile(userId: string): Promise<FullProfile> {
     username: profile.username,
     displayName: profile.displayName,
     bio: profile.bio,
+    bioPrivate: profile.bioPrivate,
     avatarUrl: profile.avatarUrl,
     socialLinks: profile.socialLinks as Record<string, unknown> | null,
     createdAt: profile.createdAt,
+    isPrivate: profile.isPrivate,
+    isFollowing: null,
+    followStatus: null,
     email: profile.email,
     emailVerified: profile.emailVerified,
     role: profile.role,
@@ -162,11 +227,17 @@ export async function updateProfile(
     if (data.bio !== undefined) {
       profileUpdates.bio = data.bio;
     }
+    if (data.bioPrivate !== undefined) {
+      profileUpdates.bioPrivate = data.bioPrivate;
+    }
     if (data.avatarUrl !== undefined) {
       profileUpdates.avatarUrl = data.avatarUrl;
     }
     if (data.socialLinks !== undefined) {
       profileUpdates.socialLinks = data.socialLinks;
+    }
+    if (data.isPrivate !== undefined) {
+      profileUpdates.isPrivate = data.isPrivate;
     }
 
     const hasProfileUpdates = Object.keys(profileUpdates).length > 1;
