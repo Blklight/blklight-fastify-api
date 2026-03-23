@@ -1913,6 +1913,246 @@ Update reading progress on a chapter. Creates or updates book progress and chapt
 
 ---
 
+## Highlights
+
+> **Note:** All highlight routes require authentication. Highlights are private — only the owner can see them.
+
+### GET /api/v1/highlights/palette
+
+Get the user's active highlight palette.
+
+**Auth Required:** Yes
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "colors": ["#FFF176", "#A5D6A7", "#90CAF9", "#F48FB1", "#CE93D8"],
+    "isCustom": false
+  },
+  "error": null,
+  "message": "Palette retrieved"
+}
+```
+
+**Note:** `isCustom: false` means the default palette is in use (stored in code, not DB).
+
+---
+
+### PATCH /api/v1/highlights/palette
+
+Update the user's highlight palette.
+
+**Auth Required:** Yes
+
+**Request Body:**
+```json
+{
+  "colors": ["#FFEB3B", "#4CAF50", "#2196F3", "#E91E63", "#9C27B0"]
+}
+```
+
+> **Constraint:** Exactly 5 valid hex colors required.
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Palette updated"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `VALIDATION_ERROR`
+
+---
+
+### POST /api/v1/documents/:id/highlights
+
+Create a highlight on a document.
+
+**Auth Required:** Yes
+
+**Request Body:**
+```json
+{
+  "selection": {
+    "text": "the highlighted text content",
+    "color": "#FFF176",
+    "position": {
+      "nodeIndex": 3,
+      "offsetStart": 15,
+      "offsetEnd": 42
+    }
+  },
+  "annotation": null
+}
+```
+
+> **Constraint:** `color` must match one of the user's 5 palette colors.
+
+**Example Response (201):**
+```json
+{
+  "data": {
+    "id": "hl123...",
+    "documentId": "doc123...",
+    "selection": { ... },
+    "annotation": null,
+    "createdAt": "2024-02-15T10:00:00.000Z",
+    "updatedAt": "2024-02-15T10:00:00.000Z"
+  },
+  "error": null,
+  "message": "Highlight created"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### GET /api/v1/highlights/me
+
+Get all highlights for the authenticated user, grouped by document.
+
+**Auth Required:** Yes
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| cursor | string | - | Pagination cursor |
+| limit | integer | 20 | Results per page (max 50) |
+
+**Example Response (200):**
+```json
+{
+  "data": {
+    "items": [
+      {
+        "document": {
+          "id": "doc123...",
+          "title": "Getting Started with TypeScript",
+          "slug": "getting-started-with-typescript",
+          "authorUsername": "johndoe"
+        },
+        "highlights": [
+          {
+            "id": "hl1...",
+            "documentId": "doc123...",
+            "selection": {
+              "text": "TypeScript is a typed superset of JavaScript",
+              "color": "#FFF176",
+              "position": { "nodeIndex": 2, "offsetStart": 0, "offsetEnd": 47 }
+            },
+            "annotation": null,
+            "createdAt": "2024-02-15T10:00:00.000Z",
+            "updatedAt": "2024-02-15T10:00:00.000Z"
+          }
+        ]
+      }
+    ],
+    "nextCursor": null,
+    "total": 3
+  },
+  "error": null,
+  "message": "Highlights retrieved"
+}
+```
+
+**Note:** Highlights within each document are ordered by `createdAt` DESC. Use `GET /documents/:id/highlights/me` for reading order.
+
+---
+
+### GET /api/v1/documents/:id/highlights/me
+
+Get highlights on a specific document in reading order.
+
+**Auth Required:** Yes
+
+**Use case:** Render a user's highlights while reading a document.
+
+**Example Response (200):**
+```json
+{
+  "data": [
+    {
+      "id": "hl1...",
+      "documentId": "doc123...",
+      "selection": {
+        "text": "TypeScript is a typed superset",
+        "color": "#FFF176",
+        "position": { "nodeIndex": 0, "offsetStart": 0, "offsetEnd": 35 }
+      },
+      "annotation": null,
+      "createdAt": "2024-02-15T10:00:00.000Z",
+      "updatedAt": "2024-02-15T10:00:00.000Z"
+    }
+  ],
+  "error": null,
+  "message": "Highlights retrieved"
+}
+```
+
+**Note:** Highlights are sorted by `nodeIndex` ASC, then `offsetStart` ASC — matching document reading order.
+
+---
+
+### PATCH /api/v1/highlights/:id
+
+Update a highlight's selection or annotation.
+
+**Auth Required:** Yes
+
+**Request Body:**
+```json
+{
+  "selection": {
+    "text": "updated highlighted text",
+    "color": "#A5D6A7",
+    "position": { "nodeIndex": 1, "offsetStart": 10, "offsetEnd": 30 }
+  },
+  "annotation": {
+    "type": "doc",
+    "content": [{ "type": "text", "text": "My note about this passage" }]
+  }
+}
+```
+
+> **Constraint:** If `color` is changed, it must still be in your palette.
+
+**Example Response (200):**
+```json
+{
+  "data": { ... },
+  "error": null,
+  "message": "Highlight updated"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`, `VALIDATION_ERROR`
+
+---
+
+### DELETE /api/v1/highlights/:id
+
+Delete a highlight.
+
+**Auth Required:** Yes
+
+**Example Response (200):**
+```json
+{
+  "data": null,
+  "error": null,
+  "message": "Highlight deleted"
+}
+```
+
+**Error Codes:** `UNAUTHORIZED`, `NOT_FOUND`
+
+---
+
 ## Error Codes Reference
 
 | Code | HTTP Status | Description |

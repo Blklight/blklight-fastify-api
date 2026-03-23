@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 12 complete — books feature implemented.
+Session 13 complete — highlights feature implemented.
 
 ## Tech Stack
 
@@ -74,6 +74,11 @@ src/
       books.service.ts - Book business logic
       books.schema.ts - Drizzle schema: books, book_chapters, book_category, book_tags, book_progress, book_chapter_progress
       books.zod.ts - Zod validation schemas
+    highlights/
+      highlights.routes.ts - Highlight route handlers
+      highlights.service.ts - Highlight business logic
+      highlights.schema.ts - Drizzle schema: highlights, highlight_palette
+      highlights.zod.ts - Zod validation schemas
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -85,6 +90,7 @@ src/
     toc.ts          - Table of contents extraction from TipTap JSON
   config/
     env.ts          - Environment variable validation with Zod
+    highlight-palette.ts - Default highlight color palette (5 colors)
   app.ts            - Fastify instance: plugins, hooks, error handler
 ```
 
@@ -353,6 +359,39 @@ Unique constraint: (user_id, book_id)
 
 Unique constraint: (user_id, chapter_id)
 
+### highlights
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| document_id | text | foreign key → documents.id |
+| selection | jsonb | { text, color, position } — see below |
+| annotation | jsonb | nullable, TipTap JSON rich text |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
+**selection jsonb shape:**
+```json
+{
+  "text": "highlighted text content",
+  "color": "#FFF176",
+  "position": {
+    "nodeIndex": 0,
+    "offsetStart": 10,
+    "offsetEnd": 45
+  }
+}
+```
+
+### highlight_palette
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | unique, foreign key → users.id |
+| colors | jsonb | array of 5 hex strings |
+| created_at | timestamp | default now() |
+| updated_at | timestamp | default now() |
+
 ## Available Scripts
 
 | Script | Description |
@@ -449,6 +488,13 @@ API docs at http://localhost:3000/docs
 - **Books feed requires authentication** — unlike documents, books are not public without login
 - **document_hash for books = SHA-256({ title, description, author })** — passed to signDocument()
 - **Chapter documents include title, abstract, slug in BookFull** — never full content
+- **Highlights are always private** — never exposed to other users
+- **Color must be from user's active palette** — validated in service layer, not just Zod
+- **Default palette is defined in code** — only customizations persisted in DB
+- **getDocumentHighlights() returns highlights in reading order** — nodeIndex ASC, offsetStart ASC
+- **getMyHighlights() groups by document** — for the highlights dashboard view
+- **highlight_palette uses upsert** — one row per user
+- **Highlights are independent** — journal relation added in Session 14
 
 ## Response Format
 
@@ -613,6 +659,18 @@ Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?catego
 | PATCH | /api/v1/books/:id/toc | Yes | Update table of contents |
 | PATCH | /api/v1/books/:id/progress/:chapterId | Yes | Update reading progress |
 
+## Highlights Routes
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | /api/v1/documents/:id/highlights | Yes | Create a highlight |
+| GET | /api/v1/highlights/me | Yes | Get my highlights grouped by document |
+| GET | /api/v1/documents/:id/highlights/me | Yes | Get highlights on a document (reading order) |
+| PATCH | /api/v1/highlights/:id | Yes | Update a highlight |
+| DELETE | /api/v1/highlights/:id | Yes | Delete a highlight |
+| GET | /api/v1/highlights/palette | Yes | Get my highlight palette |
+| PATCH | /api/v1/highlights/palette | Yes | Update my highlight palette |
+
 ## Authorship JSONB Shape
 
 Set on publish, null while draft:
@@ -630,7 +688,6 @@ Set on publish, null while draft:
 
 ## Next Steps
 
-- Highlights feature (Session 13)
 - Journals feature (Session 14)
 - Follows feature (Session 15)
 - Tests (Session 16)

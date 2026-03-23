@@ -1,0 +1,130 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { createHighlightSchema } from './highlights.zod';
+import { createHighlight, getDocumentHighlights } from './highlights.service';
+
+export default async function documentHighlightRoutes(app: FastifyInstance) {
+  app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
+    await app.authenticate(request, reply);
+  });
+
+  app.post('/:id/highlights', {
+    schema: {
+      summary: 'Create a highlight on a document',
+      tags: ['highlights'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        required: ['selection'],
+        properties: {
+          selection: {
+            type: 'object',
+            required: ['text', 'color', 'position'],
+            properties: {
+              text: { type: 'string', minLength: 1, maxLength: 2000 },
+              color: { type: 'string', pattern: '^#[0-9A-Fa-f]{6}$' },
+              position: {
+                type: 'object',
+                required: ['nodeIndex', 'offsetStart', 'offsetEnd'],
+                properties: {
+                  nodeIndex: { type: 'number', minimum: 0 },
+                  offsetStart: { type: 'number', minimum: 0 },
+                  offsetEnd: { type: 'number', minimum: 1 },
+                },
+              },
+            },
+          },
+          annotation: { type: 'object', nullable: true },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            data: { type: 'object' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+        400: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'object' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+
+    const parsed = createHighlightSchema.safeParse({
+      documentId: id,
+      ...(request.body as object),
+    });
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const highlight = await createHighlight(userId, parsed.data);
+
+    reply.code(201).send({
+      data: highlight,
+      error: null,
+      message: 'Highlight created',
+    });
+  });
+
+  app.get('/:id/highlights/me', {
+    schema: {
+      summary: 'Get my highlights on a document (reading order)',
+      tags: ['highlights'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'array' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    const { userId } = request.user;
+    const { id } = request.params;
+
+    const highlights = await getDocumentHighlights(userId, id);
+
+    reply.send({
+      data: highlights,
+      error: null,
+      message: 'Highlights retrieved',
+    });
+  });
+}
