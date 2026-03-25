@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 17 complete — OAuth & Account Linking implemented.
+Session 18 complete — roadmap, docs and tests implemented.
 
 ## Tech Stack
 
@@ -112,6 +112,10 @@ src/
     highlight-palette.ts - Default highlight color palette (5 colors)
     note-colors.ts  - Valid Tailwind color names for notes
   app.ts            - Fastify instance: plugins, hooks, error handler
+tests/
+  utils/           - Unit tests for utility functions
+  services/        - Unit tests for service functions (mocked DB)
+vitest.config.ts   - Vitest test configuration
 ```
 
 ## Code Style
@@ -465,6 +469,9 @@ Unique constraint: (follower_id, following_id)
 | `npm run db:generate` | Generate Drizzle migrations |
 | `npm run db:migrate` | Run pending migrations |
 | `npm run db:studio` | Open Drizzle Studio |
+| `npm test` | Run all tests |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:coverage` | Run tests with coverage |
 
 ## How to Run Locally
 
@@ -844,9 +851,17 @@ Set on publish, null while draft:
 - **GitHub email:** fetched from `/user/emails` endpoint if not in primary profile
 - **Temporary JWT:** short-lived token issued to new OAuth users for frontend onboarding flow
 
+## Testing
+
+- **Tests live in tests/ — mirrors src/ structure**
+- **Utils tests are pure** — no mocks needed
+- **Service tests mock the DB layer** — using vi.mock()
+- **Tests are organized by roadmap phase**
+- **Run npm test before each phase release**
+- **docs/ROADMAP.md defines release gates per phase**
+
 ## Next Steps
 
-- Tests (future)
 - Comments (future)
 - Sharevault (future)
 - Contract signatures integration

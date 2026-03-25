@@ -2,6 +2,8 @@
 
 Base URL: `http://localhost:3000`
 
+> See [docs/ROADMAP.md](../docs/ROADMAP.md) for the recommended order to enable and test features per release phase.
+
 ## Public Documents (No Auth Required)
 
 These endpoints are publicly accessible without authentication. Any visitor can read documents, browse profiles, and explore content.

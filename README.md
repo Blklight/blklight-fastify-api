@@ -126,3 +126,20 @@ See `.env.example` for all required variables:
 - `CORS_ORIGIN` — CORS origin (default: *)
 - `MAX_SESSIONS_PER_USER` — Max sessions per user (default: 5)
 - `SIGNATURE_ENCRYPTION_KEY` — AES-256-GCM encryption key (64 hex chars)
+
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for feature release phases:
+
+- **MVP** — Auth, profiles, documents, categories/tags
+- **Beta** — Workspace, notes, exercises, likes/bookmarks, account management
+- **v1.0** — Books, highlights/journals, follows, social feed
+- **Future** — Comments, sharevault, team workspaces, email verification, and more
+
+## Testing
+
+```bash
+npm test           # Run all tests
+npm run test:watch # Run tests in watch mode
+npm run test:coverage # Run tests with coverage
+```
