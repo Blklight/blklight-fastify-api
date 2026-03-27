@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 18 complete — roadmap, docs and tests implemented.
+Session 19 complete — seed and roadmap updated.
 
 ## Tech Stack
 
@@ -101,6 +101,7 @@ src/
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
+    seed.ts         - Database seeder (categories, tags)
   utils/
     crypto.ts       - Password hashing + document signing utilities
     errors.ts       - Custom error classes
@@ -468,6 +469,7 @@ Unique constraint: (follower_id, following_id)
 | `npm run start` | Run production server from dist/ |
 | `npm run db:generate` | Generate Drizzle migrations |
 | `npm run db:migrate` | Run pending migrations |
+| `npm run db:seed` | Seed database (categories, tags) |
 | `npm run db:studio` | Open Drizzle Studio |
 | `npm test` | Run all tests |
 | `npm run test:watch` | Run tests in watch mode |
@@ -851,6 +853,15 @@ Set on publish, null while draft:
 - **GitHub email:** fetched from `/user/emails` endpoint if not in primary profile
 - **Temporary JWT:** short-lived token issued to new OAuth users for frontend onboarding flow
 
+## Seed
+
+- **Seed is idempotent** — safe to run multiple times
+- **All seed inserts use ON CONFLICT DO NOTHING**
+- **All category names, slugs, and tags are in English**
+- **i18n for category names is handled by the frontend**
+- **Tags are normalized (trim + lowercase) before insert**
+- **Categories are the source of truth for content classification**
+
 ## Testing
 
 - **Tests live in tests/ — mirrors src/ structure**
@@ -862,6 +873,7 @@ Set on publish, null while draft:
 
 ## Next Steps
 
+- Pre-MVP checklist complete → ready for MVP launch
 - Comments (future)
 - Sharevault (future)
 - Contract signatures integration

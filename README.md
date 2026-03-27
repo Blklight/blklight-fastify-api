@@ -35,7 +35,10 @@ npm run db:generate
 # 5. Apply migrations
 npm run db:migrate
 
-# 6. Start development server
+# 6. Seed database (categories and tags)
+npm run db:seed
+
+# 7. Start development server
 npm run dev
 ```
 
@@ -48,6 +51,7 @@ npm run dev
 | `npm run start` | Run production server |
 | `npm run db:generate` | Generate Drizzle migrations |
 | `npm run db:migrate` | Apply migrations |
+| `npm run db:seed` | Seed database (categories, tags) |
 | `npm run db:studio` | Open Drizzle Studio |
 
 ## API
@@ -131,7 +135,8 @@ See `.env.example` for all required variables:
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for feature release phases:
 
-- **MVP** — Auth, profiles, documents, categories/tags
+- **Pre-MVP** — Docker, PostgreSQL, migrations, seed, health check, API docs
+- **MVP** — Auth, profiles, documents, categories/tags, admin category management
 - **Beta** — Workspace, notes, exercises, likes/bookmarks, account management
 - **v1.0** — Books, highlights/journals, follows, social feed
 - **Future** — Comments, sharevault, team workspaces, email verification, and more

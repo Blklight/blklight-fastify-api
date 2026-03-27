@@ -375,6 +375,8 @@ Get the authenticated user's bookmarked documents.
 
 ## Categories
 
+> Categories are pre-seeded in English via `npm run db:seed`. Use Drizzle Studio (`npm run db:studio`) to add more.
+
 ### GET /api/v1/categories
 
 Get all categories in a hierarchical tree structure.
@@ -547,6 +549,8 @@ Delete a category. Orphaned children are reparented to root.
 ---
 
 ## Tags
+
+> Tags are pre-seeded in English via `npm run db:seed`. Tags are normalized (trim + lowercase).
 
 ### GET /api/v1/tags/popular
 

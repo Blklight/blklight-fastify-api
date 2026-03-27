@@ -6,9 +6,46 @@ This roadmap defines which API features/routes to enable and test per phase. Eac
 
 ---
 
+## Pre-MVP — Setup & Infrastructure
+
+Goal: Environment ready, database seeded, API responding.
+No user-facing features yet — just the foundation.
+
+### Infrastructure checklist
+
+- ✓ Docker running (`docker compose up -d`)
+- ✓ PostgreSQL responding (`docker ps` shows healthy)
+- ✓ Migrations applied (`npm run db:migrate`)
+- ✓ Seed executed (`npm run db:seed`)
+- ✓ Environment variables configured (`.env.development`)
+- ✓ Server starts without errors (`npm run dev`)
+- ✓ Health check green (`GET /health` returns 200)
+- ✓ API docs accessible (`GET /docs` loads Scalar)
+
+### Routes available in this phase
+
+| Method | Endpoint |
+|--------|----------|
+| GET | /health |
+| GET | /docs |
+
+### Admin setup (manual via Drizzle Studio or SQL)
+
+- Create first admin account
+- Verify categories seeded correctly (`npm run db:studio`)
+- Verify tags seeded correctly
+
+### Tests to pass before moving to MVP
+
+- `npm test` passes (all utils tests green)
+- `tsc --noEmit` passes (zero TypeScript errors)
+
+---
+
 ## MVP — Minimum Viable Product
 
-Goal: Platform exists. Users can create accounts and publish content.
+Goal: Users can create accounts, write and publish content.
+Platform is functional but not yet social.
 
 ### Auth
 
@@ -40,26 +77,27 @@ Goal: Platform exists. Users can create accounts and publish content.
 | PATCH | /api/v1/documents/:id |
 | PATCH | /api/v1/documents/:id/publish |
 | GET | /api/v1/documents (public feed) |
-| GET | /api/v1/documents/:username/:slug (public read) |
+| GET | /api/v1/documents/:username/:slug |
 | GET | /api/v1/documents/me |
 
-### Categories & Tags
+### Categories & Tags (public read)
 
 | Method | Endpoint |
 |--------|----------|
 | GET | /api/v1/categories |
+| GET | /api/v1/categories/:slug |
 | GET | /api/v1/tags/popular |
 
-### Healthcheck
+### Admin (categories management)
 
 | Method | Endpoint |
 |--------|----------|
-| GET | /health |
-| GET | /docs (Scalar API docs) |
+| POST | /api/v1/admin/categories |
+| PATCH | /api/v1/admin/categories/:id |
+| DELETE | /api/v1/admin/categories/:id |
 
 ### Tests to pass before MVP release
 
-- All utils tests ✓
 - auth.service tests ✓
 - documents.service tests ✓
 - signatures.service tests ✓
@@ -106,16 +144,18 @@ Goal: Engagement, personal space, and learning content.
 | Method | Endpoint |
 |--------|----------|
 | DELETE | /api/v1/profiles/me |
-| PATCH | /api/v1/auth/account/unlink/:provider |
+| DELETE | /api/v1/auth/account/unlink/:provider |
 | GET | /api/v1/auth/github/link |
+| GET | /api/v1/auth/github/link/callback |
 | GET | /api/v1/auth/google/link |
+| GET | /api/v1/auth/google/link/callback |
 
 ### Tests to pass before Beta release
 
 - workspace.service tests ✓
 - notes.service tests ✓
 - tutorial-exercises.service tests ✓
-- sandbox.service tests ✓
+- sandbox tests ✓
 
 ---
 
@@ -138,6 +178,7 @@ Goal: Social features, curated content, personal library.
 | PATCH | /api/v1/books/:id/chapters/:chapterId |
 | DELETE | /api/v1/books/:id/chapters/:chapterId |
 | PATCH | /api/v1/books/:id/chapters/reorder |
+| PATCH | /api/v1/books/:id/toc |
 | PATCH | /api/v1/books/:id/progress/:chapterId |
 
 ### Highlights & Journals
@@ -173,11 +214,19 @@ Goal: Social features, curated content, personal library.
 | POST | /api/v1/follows/requests/:id/accept |
 | DELETE | /api/v1/follows/requests/:id/reject |
 
-### Profile author documents
+### Profile documents
 
 | Method | Endpoint |
 |--------|----------|
 | GET | /api/v1/profiles/:username/documents |
+
+### Style Templates
+
+| Method | Endpoint |
+|--------|----------|
+| POST | /api/v1/document-style-templates |
+| GET | /api/v1/document-style-templates |
+| DELETE | /api/v1/document-style-templates/:id |
 
 ### Tests to pass before v1.0 release
 
@@ -193,13 +242,16 @@ Goal: Social features, curated content, personal library.
 Features planned but not yet implemented:
 
 - Comments on documents
-- Sharevault (public workspace layer)
+- Sharevault (public workspace layer with PIN protection)
 - Team workspaces
-- Email verification
-- Password reset flow
+- Email verification & password reset
 - Account feature (change email/password/username)
 - Contract signatures (document_signatures)
-- Blockchain migration for signatures (tx_hash)
+- Blockchain migration for signatures (tx_hash — Solana or Base)
 - Full-text search (PostgreSQL tsvector)
-- OAuth additional providers
-- Admin panel
+- Notifications system
+- Admin panel (beyond category management)
+- Analytics & reading stats
+- RSS feeds
+- API rate limiting per user tier
+- Monetization & plans
