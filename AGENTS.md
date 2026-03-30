@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 19 complete — seed and roadmap updated.
+Session 22 complete — security remediation plan generated.
 
 ## Tech Stack
 
@@ -117,6 +117,12 @@ tests/
   utils/           - Unit tests for utility functions
   services/        - Unit tests for service functions (mocked DB)
 vitest.config.ts   - Vitest test configuration
+types/
+  api.types.ts     - Complete TypeScript types for frontend
+docs/
+  SECURITY.md              - Security audit findings and recommendations
+  SECURITY_REMEDIATION.md  - Detailed remediation steps for each finding
+  SECURITY_SESSIONS.md     - Mapping findings to fix sessions
 ```
 
 ## Code Style
@@ -862,6 +868,12 @@ Set on publish, null while draft:
 - **Tags are normalized (trim + lowercase) before insert**
 - **Categories are the source of truth for content classification**
 
+## API Types
+
+- **types/api.types.ts is self-contained** — safe to copy to any frontend
+- **Request types derived from Zod schemas** — keep in sync on schema changes
+- **Response types derived from service return shapes**
+
 ## Testing
 
 - **Tests live in tests/ — mirrors src/ structure**
@@ -870,6 +882,19 @@ Set on publish, null while draft:
 - **Tests are organized by roadmap phase**
 - **Run npm test before each phase release**
 - **docs/ROADMAP.md defines release gates per phase**
+
+## Security
+
+- Security findings documented in `docs/SECURITY.md`
+- Detailed remediation steps in `docs/SECURITY_REMEDIATION.md`
+- Session planning in `docs/SECURITY_SESSIONS.md`
+- Fix priorities aligned with ROADMAP.md phases:
+  - Pre-MVP: Fix all CRITICAL and HIGH findings
+  - MVP: Fix all MEDIUM findings
+  - Beta: Fix all LOW findings
+- Review SECURITY.md before each phase release
+- Never merge a phase release without clearing its security gates in SECURITY_REMEDIATION.md
+- Mark each finding as FIXED with commit reference when resolved
 
 ## Next Steps
 

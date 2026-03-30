@@ -102,6 +102,11 @@ Platform is functional but not yet social.
 - documents.service tests ✓
 - signatures.service tests ✓
 
+### Security gates
+
+- Fix all CRITICAL and HIGH findings from `docs/SECURITY.md`
+- See `docs/SECURITY_REMEDIATION.md` for details
+
 ---
 
 ## Beta
@@ -156,6 +161,11 @@ Goal: Engagement, personal space, and learning content.
 - notes.service tests ✓
 - tutorial-exercises.service tests ✓
 - sandbox tests ✓
+
+### Security gates
+
+- Fix all MEDIUM findings from `docs/SECURITY.md`
+- See `docs/SECURITY_REMEDIATION.md` for details
 
 ---
 
@@ -234,6 +244,11 @@ Goal: Social features, curated content, personal library.
 - highlights.service tests ✓
 - journals.service tests ✓
 - follows.service tests ✓
+
+### Security gates
+
+- Fix all LOW findings from `docs/SECURITY.md`
+- See `docs/SECURITY_REMEDIATION.md` for details
 
 ---
 

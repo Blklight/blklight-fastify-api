@@ -37,70 +37,14 @@ No user-facing features yet — just the foundation.
 
 ### Tests to pass before moving to MVP
 
-- `npm test` passes (all utils tests green)
-- `tsc --noEmit` passes (zero TypeScript errors)
-
----
-
-## MVP — Minimum Viable Product
-
-Goal: Users can create accounts, write and publish content.
-Platform is functional but not yet social.
-
-### Auth
-
-| Method | Endpoint |
-|--------|----------|
-| POST | /api/v1/auth/register |
-| POST | /api/v1/auth/login |
-| POST | /api/v1/auth/refresh |
-| POST | /api/v1/auth/logout |
-| GET | /api/v1/auth/github |
-| GET | /api/v1/auth/github/callback |
-| GET | /api/v1/auth/google |
-| GET | /api/v1/auth/google/callback |
-| POST | /api/v1/auth/onboarding |
-
-### Profiles
-
-| Method | Endpoint |
-|--------|----------|
-| GET | /api/v1/profiles/:username |
-| GET | /api/v1/profiles/me |
-| PATCH | /api/v1/profiles/me |
-
-### Documents
-
-| Method | Endpoint |
-|--------|----------|
-| POST | /api/v1/documents |
-| PATCH | /api/v1/documents/:id |
-| PATCH | /api/v1/documents/:id/publish |
-| GET | /api/v1/documents (public feed) |
-| GET | /api/v1/documents/:username/:slug |
-| GET | /api/v1/documents/me |
-
-### Categories & Tags (public read)
-
-| Method | Endpoint |
-|--------|----------|
-| GET | /api/v1/categories |
-| GET | /api/v1/categories/:slug |
-| GET | /api/v1/tags/popular |
-
-### Admin (categories management)
-
-| Method | Endpoint |
-|--------|----------|
-| POST | /api/v1/admin/categories |
-| PATCH | /api/v1/admin/categories/:id |
-| DELETE | /api/v1/admin/categories/:id |
-
-### Tests to pass before MVP release
-
 - auth.service tests ✓
 - documents.service tests ✓
 - signatures.service tests ✓
+
+### Security gates
+
+- Fix all CRITICAL and HIGH findings from `docs/SECURITY.md`
+- See `docs/SECURITY_REMEDIATION.md` for details
 
 ---
 
@@ -156,6 +100,11 @@ Goal: Engagement, personal space, and learning content.
 - notes.service tests ✓
 - tutorial-exercises.service tests ✓
 - sandbox tests ✓
+
+### Security gates
+
+- Fix all MEDIUM findings from `docs/SECURITY.md`
+- See `docs/SECURITY_REMEDIATION.md` for details
 
 ---
 
@@ -234,6 +183,11 @@ Goal: Social features, curated content, personal library.
 - highlights.service tests ✓
 - journals.service tests ✓
 - follows.service tests ✓
+
+### Security gates
+
+- Fix all LOW findings from `docs/SECURITY.md`
+- See `docs/SECURITY_REMEDIATION.md` for details
 
 ---
 

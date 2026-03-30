@@ -141,6 +141,16 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for feature release phases:
 - **v1.0** — Books, highlights/journals, follows, social feed
 - **Future** — Comments, sharevault, team workspaces, email verification, and more
 
+## Frontend Types
+
+TypeScript types for the frontend are available in `types/api.types.ts`. This file is **self-contained** — copy it to your frontend project without any imports from `src/`.
+
+```bash
+cp types/api.types.ts /path/to/frontend/src/types/api.ts
+```
+
+All request and response types are derived from the backend Zod schemas and service return types.
+
 ## Testing
 
 ```bash

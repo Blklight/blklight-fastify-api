@@ -4,9 +4,12 @@ Base URL: `http://localhost:3000`
 
 > See [docs/ROADMAP.md](../docs/ROADMAP.md) for the recommended order to enable and test features per release phase.
 
-## Public Documents (No Auth Required)
+## TypeScript Types
 
-These endpoints are publicly accessible without authentication. Any visitor can read documents, browse profiles, and explore content.
+All API types are available in [types/api.types.ts](../types/api.types.ts).
+Copy this file to your frontend project for full type safety.
+
+> **Note on Authentication:** When copying types, import `ApiResponse<T>` and handle `error` field for proper error handling.
 
 ---
 
