@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 22 complete — security remediation plan generated.
+Session 23 complete — study files generated.
 
 ## Tech Stack
 
