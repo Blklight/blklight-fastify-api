@@ -8,6 +8,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
 import { env } from '../../config/env';
+import { sendVerificationEmail } from '../email/email.service';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 let appInstance: FastifyInstance | null = null;
@@ -302,6 +303,10 @@ export async function completeOnboarding(
   const accessToken = await app.jwt.sign(
     { userId, email: '', role: 'user' },
     { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
+  );
+
+  sendVerificationEmail(userId, user.email, trimmedUsername).catch((err) =>
+    console.error('Verification email enqueue failed:', err)
   );
 
   return { accessToken };

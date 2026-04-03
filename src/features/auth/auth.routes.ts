@@ -1,6 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import { registerSchema, loginSchema } from './auth.zod';
 import { registerUser, loginUser, refreshSession, logout } from './auth.service';
+import { verifyEmail, sendVerificationEmail, sendPasswordResetEmail, resetPassword } from '../email/email.service';
 import { env } from '../../config/env';
 
 const REFRESH_COOKIE_OPTIONS = {
@@ -221,6 +223,209 @@ export default async function authRoutes(app: FastifyInstance) {
       data: null,
       error: null,
       message: 'Logged out successfully',
+    });
+  });
+
+  app.post('/verify-email', {
+    schema: {
+      summary: 'Verify email address',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['token'],
+        properties: {
+          token: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = z.object({ token: z.string() }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    await verifyEmail(parsed.data.token);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Email verified successfully',
+    });
+  });
+
+  app.post('/resend-verification', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: '1 hour',
+      },
+    },
+    schema: {
+      summary: 'Resend verification email',
+      tags: ['auth'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId = request.user.userId;
+    const { users } = await import('../auth/auth.schema');
+    const { db } = await import('../../db/index');
+    const { eq } = await import('drizzle-orm');
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!user) {
+      return reply.code(404).send({
+        data: null,
+        error: { code: 'NOT_FOUND', message: 'User not found' },
+        message: 'User not found',
+      });
+    }
+
+    await sendVerificationEmail(user.id, user.email, user.username);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Verification email queued',
+    });
+  });
+
+  app.post('/forgot-password', {
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: '1 hour',
+      },
+    },
+    schema: {
+      summary: 'Request password reset',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['email'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = z.object({ email: z.string().email() }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    await sendPasswordResetEmail(parsed.data.email);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'If this email exists, a reset link has been queued',
+    });
+  });
+
+  app.post('/reset-password', {
+    schema: {
+      summary: 'Reset password',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['token', 'password'],
+        properties: {
+          token: { type: 'string' },
+          password: { type: 'string', minLength: 8, maxLength: 128 },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = z.object({
+      token: z.string(),
+      password: z.string().min(8).max(128),
+    }).safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    await resetPassword(parsed.data.token, parsed.data.password);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Password reset successfully. Please log in again.',
     });
   });
 }

@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 23 complete — study files generated.
+Session 24 complete — email system implemented.
 
 ## Tech Stack
 
@@ -16,6 +16,7 @@ Session 23 complete — study files generated.
 - **Password Hashing**: node:crypto (pbkdf2Sync)
 - **IDs**: CUID2
 - **API Docs**: @fastify/swagger + @scalar/fastify-api-reference
+- **Email**: Resend with persistent queue + React Email
 
 ## Folder Structure
 
@@ -98,6 +99,15 @@ src/
       follows.routes.ts - Follow route handlers
       follows.service.ts - Follow business logic
       follows.schema.ts - Drizzle schema: follows
+    email/
+      email.service.ts - Email queue management + send logic
+      email.queue.ts - Queue processor (setInterval)
+      email.schema.ts - Drizzle schema: email_verifications, password_resets, email_queue
+      email.templates/
+        verification.tsx - React Email template
+        welcome.tsx - React Email template
+        password-reset.tsx - React Email template
+        index.ts - Exports compiled HTML functions
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -166,6 +176,39 @@ docs/
 | user_id | text | foreign key → users.id |
 | refresh_token | text | unique, not null |
 | expires_at | timestamp | not null |
+| created_at | timestamp | default now() |
+
+### email_verifications
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | unique, foreign key → users.id |
+| token | text | unique, not null |
+| expires_at | timestamp | not null |
+| created_at | timestamp | default now() |
+
+### password_resets
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| user_id | text | foreign key → users.id |
+| token | text | unique, not null |
+| expires_at | timestamp | not null |
+| used_at | timestamp | nullable (null = not yet used) |
+| created_at | timestamp | default now() |
+
+### email_queue
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text | CUID2, primary key |
+| to | text | not null (recipient email) |
+| subject | text | not null |
+| html | text | not null (compiled HTML from React Email) |
+| status | text | default 'pending' ('pending' | 'sent' | 'failed') |
+| attempts | integer | default 0 |
+| last_error | text | nullable (last error message if failed) |
+| scheduled_at | timestamp | default now() |
+| sent_at | timestamp | nullable |
 | created_at | timestamp | default now() |
 
 ### profiles (public — one-to-one with users)
@@ -625,6 +668,10 @@ API docs at http://localhost:3000/docs
 | POST | /api/v1/auth/login | Login with email or username | 10/min |
 | POST | /api/v1/auth/refresh | Refresh access token | None |
 | POST | /api/v1/auth/logout | Logout and invalidate session | None |
+| POST | /api/v1/auth/verify-email | Verify email address | None |
+| POST | /api/v1/auth/resend-verification | Resend verification email | 3/hour |
+| POST | /api/v1/auth/forgot-password | Request password reset | 3/hour |
+| POST | /api/v1/auth/reset-password | Reset password | None |
 
 All auth routes return `{ data, error, message }` format. Refresh token is stored in httpOnly cookie.
 
@@ -868,6 +915,21 @@ Set on publish, null while draft:
 - **Tags are normalized (trim + lowercase) before insert**
 - **Categories are the source of truth for content classification**
 
+## Email System
+
+- **Emails always go through the queue** — never sent directly
+- **Queue processor runs every 10 minutes via setInterval**
+- **Daily limit: 50 emails** (EMAIL_DAILY_LIMIT env var)
+- **Sender: onboarding@resend.dev** (swap EMAIL_FROM for custom domain)
+- **Failed emails retry up to 3 times then marked as 'failed'**
+- **sendPasswordResetEmail never reveals if email exists**
+- **Password reset invalidates all active sessions**
+- **OAuth-only accounts cannot reset password**
+- **Welcome email sent after email verification** (not after register)
+- **email_verifications uses upsert** — one token per user at a time
+- **React Email templates compiled to HTML at module load**
+- **startEmailQueue() called once after server starts**
+
 ## API Types
 
 - **types/api.types.ts is self-contained** — safe to copy to any frontend
@@ -903,5 +965,3 @@ Set on publish, null while draft:
 - Sharevault (future)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
-- Email verification
-- Password reset flow

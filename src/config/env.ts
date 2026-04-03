@@ -18,6 +18,11 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   OAUTH_REDIRECT_BASE_URL: z.string().url(),
   FRONTEND_URL: z.string().url(),
+  RESEND_API_KEY: z.string().min(1),
+  EMAIL_FROM: z.string().default('onboarding@resend.dev'),
+  EMAIL_DAILY_LIMIT: z.coerce.number().default(50),
+  EMAIL_VERIFY_EXPIRES_IN_HOURS: z.coerce.number().default(24),
+  PASSWORD_RESET_EXPIRES_IN_MINUTES: z.coerce.number().default(30),
 });
 
 const parsed = envSchema.safeParse(process.env);
