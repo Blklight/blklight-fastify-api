@@ -23,6 +23,10 @@ const envSchema = z.object({
   EMAIL_DAILY_LIMIT: z.coerce.number().default(50),
   EMAIL_VERIFY_EXPIRES_IN_HOURS: z.coerce.number().default(24),
   PASSWORD_RESET_EXPIRES_IN_MINUTES: z.coerce.number().default(30),
+  FEATURE_EMAIL: z.coerce.boolean().default(false),
+  FEATURE_OAUTH: z.coerce.boolean().default(false),
+  FEATURE_EMAIL_QUEUE: z.coerce.boolean().default(false),
+  FEATURE_CODE_SANDBOX: z.coerce.boolean().default(true),
 });
 
 const parsed = envSchema.safeParse(process.env);

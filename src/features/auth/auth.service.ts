@@ -9,6 +9,7 @@ import { hashPassword, verifyPassword, generateSecret, generateUserHash, encrypt
 import { ConflictError, UnauthorizedError } from '../../utils/errors';
 import { env } from '../../config/env';
 import { sendVerificationEmail } from '../email/email.service';
+import { features } from '../../config/features';
 import type { FastifyReply } from 'fastify';
 
 function parseExpiration(expiresIn: string): Date {
@@ -193,9 +194,11 @@ export async function createUser(
     .where(eq(users.id, userId))
     .limit(1);
 
-  sendVerificationEmail(createdUser[0]!.id, email, username).catch((err) =>
-    console.error('Verification email enqueue failed:', err)
-  );
+  if (features.email) {
+    sendVerificationEmail(createdUser[0]!.id, email, username).catch((err) =>
+      console.error('Verification email enqueue failed:', err)
+    );
+  }
 
   return { user: createdUser[0]! };
 }

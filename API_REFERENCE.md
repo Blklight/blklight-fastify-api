@@ -13,6 +13,25 @@ Copy this file to your frontend project for full type safety.
 
 ---
 
+## Feature Flags
+
+Some features can be disabled via environment variables. Disabled features return 503 with code `FEATURE_DISABLED`.
+
+| Flag | Default | Requires |
+|------|---------|----------|
+| FEATURE_EMAIL | false | RESEND_API_KEY, EMAIL_FROM |
+| FEATURE_OAUTH | false | OAuth client credentials |
+| FEATURE_EMAIL_QUEUE | false | FEATURE_EMAIL=true |
+| FEATURE_CODE_SANDBOX | true | none |
+
+Affected routes per flag:
+
+- **FEATURE_EMAIL**: verify-email, resend-verification, forgot-password, reset-password
+- **FEATURE_OAUTH**: all /auth/github and /auth/google routes
+- **FEATURE_CODE_SANDBOX**: POST /exercises/:id/submit
+
+---
+
 ### GET /api/v1/documents
 
 Get a paginated feed of published documents.

@@ -9,6 +9,7 @@ import { renderVerificationEmail, renderWelcomeEmail, renderPasswordResetEmail }
 import { hashPassword } from '../../utils/crypto';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { env } from '../../config/env';
+import { features } from '../../config/features';
 
 const resend = new Resend(env.RESEND_API_KEY);
 
@@ -58,6 +59,11 @@ async function sendVerificationEmail(
   email: string,
   username: string
 ): Promise<void> {
+  if (!features.email) {
+    console.warn(`[email] Feature disabled — skipping verification email to ${email}`);
+    return;
+  }
+
   const token = randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + env.EMAIL_VERIFY_EXPIRES_IN_HOURS * 60 * 60 * 1000);
 
@@ -129,6 +135,11 @@ async function verifyEmail(token: string): Promise<void> {
 }
 
 async function sendWelcomeEmail(email: string, username: string): Promise<void> {
+  if (!features.email) {
+    console.warn(`[email] Feature disabled — skipping welcome email to ${email}`);
+    return;
+  }
+
   const profileUrl = `${env.FRONTEND_URL}/@${username}`;
   const html = await renderWelcomeEmail({ username, profileUrl });
 
@@ -136,6 +147,11 @@ async function sendWelcomeEmail(email: string, username: string): Promise<void> 
 }
 
 async function sendPasswordResetEmail(email: string): Promise<void> {
+  if (!features.email) {
+    console.warn(`[email] Feature disabled — skipping password reset email to ${email}`);
+    return;
+  }
+
   const [user] = await db
     .select()
     .from(users)
@@ -272,6 +288,11 @@ async function processEmailBatch(): Promise<void> {
 }
 
 function startEmailQueue(): void {
+  if (!features.emailQueue) {
+    console.log('[email] Email queue is disabled — skipping');
+    return;
+  }
+
   processEmailBatch().catch((err) => console.error('Email queue batch failed:', err));
 
   setInterval(() => {

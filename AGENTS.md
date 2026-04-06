@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 24 complete — email system implemented.
+Session 25 complete — feature flags implemented.
 
 ## Tech Stack
 
@@ -120,6 +120,7 @@ src/
     toc.ts          - Table of contents extraction from TipTap JSON
   config/
     env.ts          - Environment variable validation with Zod
+    features.ts     - Feature flags configuration
     highlight-palette.ts - Default highlight color palette (5 colors)
     note-colors.ts  - Valid Tailwind color names for notes
   app.ts            - Fastify instance: plugins, hooks, error handler
@@ -929,6 +930,18 @@ Set on publish, null while draft:
 - **email_verifications uses upsert** — one token per user at a time
 - **React Email templates compiled to HTML at module load**
 - **startEmailQueue() called once after server starts**
+
+## Feature Flags
+
+- **Feature flags centralized in src/config/features.ts**
+- **Always import features from features.ts — never read FEATURE_* env vars directly in other files**
+- **requireFeature() throws 503 — use in route handlers only**
+- **Service-level checks use if (!features.x) return — silent skip**
+- **Route-level checks use requireFeature() — returns 503**
+- **Default state: email=false, oauth=false, emailQueue=false, codeSandbox=true**
+- **Enabling oauth requires all 4 OAuth env vars to be set**
+- **Enabling email requires RESEND_API_KEY and EMAIL_FROM**
+- **emailQueue only works if email is also enabled**
 
 ## API Types
 

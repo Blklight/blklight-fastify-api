@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { registerSchema, loginSchema } from './auth.zod';
 import { registerUser, loginUser, refreshSession, logout } from './auth.service';
 import { verifyEmail, sendVerificationEmail, sendPasswordResetEmail, resetPassword } from '../email/email.service';
+import { requireFeature } from '../../config/features';
 import { env } from '../../config/env';
 
 const REFRESH_COOKIE_OPTIONS = {
@@ -249,6 +250,8 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('email');
+
     const parsed = z.object({ token: z.string() }).safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -296,6 +299,8 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('email');
+
     const userId = request.user.userId;
     const { users } = await import('../auth/auth.schema');
     const { db } = await import('../../db/index');
@@ -353,6 +358,8 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('email');
+
     const parsed = z.object({ email: z.string().email() }).safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -401,6 +408,8 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('email');
+
     const parsed = z.object({
       token: z.string(),
       password: z.string().min(8).max(128),

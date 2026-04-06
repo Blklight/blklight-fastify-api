@@ -10,6 +10,7 @@ import {
 import { profiles } from '../profiles/profiles.schema';
 import { db } from '../../db/index';
 import { eq } from 'drizzle-orm';
+import { requireFeature } from '../../config/features';
 
 interface JwtPayload {
   userId: string;
@@ -361,6 +362,8 @@ export default async function tutorialExerciseRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+    requireFeature('codeSandbox');
+
     const { userId } = request.user;
     const { id } = request.params;
 

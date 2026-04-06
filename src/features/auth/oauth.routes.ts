@@ -10,6 +10,7 @@ import {
 } from './oauth.service';
 import { env } from '../../config/env';
 import { createSessionWithReply } from './auth.service';
+import { requireFeature } from '../../config/features';
 
 let appInstance: FastifyInstance | null = null;
 
@@ -35,6 +36,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
   app.get('/github', {
     schema: { summary: 'Redirect to GitHub OAuth', tags: ['oauth'] },
   }, async (_request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const redirectUrl = await githubOAuth.generateAuthorizationUri({ scope: ['user:email'] });
     return reply.redirect(redirectUrl);
   });
@@ -42,6 +45,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
   app.get('/github/callback', {
     schema: { summary: 'GitHub OAuth callback', tags: ['oauth'] },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const { code } = request.query as { code?: string };
     if (!code) {
       return reply.redirect(`${env.FRONTEND_URL}/login?error=missing_code`);
@@ -73,6 +78,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
     preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
     schema: { summary: 'Link GitHub account (start)', tags: ['oauth'] },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const userId = request.user.userId;
     const redirectUrl = await githubOAuth.generateAuthorizationUri({
       scope: ['user:email'],
@@ -85,6 +92,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
     preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
     schema: { summary: 'Link GitHub account (callback)', tags: ['oauth'] },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const { code, state } = request.query as Record<string, string>;
     const userId = request.user.userId;
 
@@ -106,6 +115,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
   app.get('/google', {
     schema: { summary: 'Redirect to Google OAuth', tags: ['oauth'] },
   }, async (_request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const redirectUrl = await googleOAuth.generateAuthorizationUri({ scope: ['profile', 'email'] });
     return reply.redirect(redirectUrl);
   });
@@ -113,6 +124,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
   app.get('/google/callback', {
     schema: { summary: 'Google OAuth callback', tags: ['oauth'] },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const { code } = request.query as { code?: string };
     if (!code) {
       return reply.redirect(`${env.FRONTEND_URL}/login?error=missing_code`);
@@ -144,6 +157,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
     preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
     schema: { summary: 'Link Google account (start)', tags: ['oauth'] },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const userId = request.user.userId;
     const redirectUrl = await googleOAuth.generateAuthorizationUri({
       scope: ['profile', 'email'],
@@ -156,6 +171,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
     preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
     schema: { summary: 'Link Google account (callback)', tags: ['oauth'] },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const { code, state } = request.query as Record<string, string>;
     const userId = request.user.userId;
 
@@ -192,6 +209,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const { userId } = request.user;
     const parsed = onboardingSchema.safeParse(request.body);
 
@@ -232,6 +251,8 @@ export default async function oauthRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    requireFeature('oauth');
+
     const { userId } = request.user;
     const params = request.params as { provider: 'github' | 'google' };
     await unlinkProvider(userId, params.provider);

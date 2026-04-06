@@ -19,6 +19,9 @@ No user-facing features yet — just the foundation.
 - ✓ Seed executed (`npm run db:seed`)
 - ✓ Environment variables configured (`.env.development`)
 - ✓ Server starts without errors (`npm run dev`)
+- ✓ Feature flags configured (`.env.development` with safe defaults)
+- ✓ Server starts with FEATURE_EMAIL=false (no Resend needed)
+- ✓ Server starts with FEATURE_OAUTH=false (no OAuth keys needed)
 - ✓ Health check green (`GET /health` returns 200)
 - ✓ API docs accessible (`GET /docs` loads Scalar)
 

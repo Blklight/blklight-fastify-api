@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import { buildApp } from '../app';
 import { env } from '../config/env';
 import { startEmailQueue } from '../features/email/email.service';
+import { features } from '../config/features';
 
 config();
 
@@ -21,8 +22,17 @@ async function start() {
     await app.listen({ port: env.PORT, host: '0.0.0.0' });
     app.log.info(`Server running at http://localhost:${env.PORT}`);
     app.log.info(`API docs available at http://localhost:${env.PORT}/docs`);
-    startEmailQueue();
-    app.log.info(`Email queue started`);
+
+    if (features.emailQueue) {
+      startEmailQueue();
+      app.log.info('Email queue started');
+    }
+
+    const enabledFeatures = Object.entries(features)
+      .filter(([, v]) => v)
+      .map(([k]) => k)
+      .join(', ');
+    app.log.info(`Features enabled: ${enabledFeatures || 'none'}`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
