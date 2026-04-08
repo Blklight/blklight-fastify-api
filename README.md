@@ -151,6 +151,12 @@ cp types/api.types.ts /path/to/frontend/src/types/api.ts
 
 All request and response types are derived from the backend Zod schemas and service return types.
 
+The file `types/form.schemas.ts` contains Zod schemas for all frontend forms, compatible with react-hook-form + @hookform/resolvers/zod.
+
+```bash
+cp types/form.schemas.ts /path/to/frontend/src/types/form.schemas.ts
+```
+
 ## Testing
 
 ```bash

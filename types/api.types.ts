@@ -10,6 +10,8 @@
  *   - No runtime dependencies - this file is 100% pure TypeScript
  *   - Keep in sync with API changes
  *
+ * @see form.schemas.ts for Zod form validation schemas
+ *
  * Note on Dates: All date fields are ISO 8601 strings (e.g., "2024-01-15T10:30:00.000Z")
  */
 

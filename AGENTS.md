@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 25 complete — feature flags implemented.
+Session 26 complete — form schemas generated.
 
 ## Tech Stack
 
@@ -130,6 +130,7 @@ tests/
 vitest.config.ts   - Vitest test configuration
 types/
   api.types.ts     - Complete TypeScript types for frontend
+  form.schemas.ts - Zod validation schemas for frontend forms
 docs/
   SECURITY.md              - Security audit findings and recommendations
   SECURITY_REMEDIATION.md  - Detailed remediation steps for each finding
@@ -948,6 +949,14 @@ Set on publish, null while draft:
 - **types/api.types.ts is self-contained** — safe to copy to any frontend
 - **Request types derived from Zod schemas** — keep in sync on schema changes
 - **Response types derived from service return shapes**
+
+## Form Schemas
+
+- **types/form.schemas.ts derives rules from backend Zod schemas** — never assume or invent
+- **Error messages use neutral i18n keys** — never hardcoded strings
+- **confirmPassword fields exist only in form schemas** — stripped before API call
+- **NOTE_COLORS duplicated in form.schemas.ts** — avoids runtime dependency on backend config
+- **When backend Zod schemas change, form.schemas.ts must be updated to match**
 
 ## Testing
 
