@@ -46,7 +46,7 @@ export function generateSecret(): string {
  * @returns Encrypted string in format: iv:authTag:encryptedData (all hex)
  */
 export function encryptSecret(secret: string): string {
-  const key = createSecretKey(Buffer.from(env.SIGNATURE_ENCRYPTION_KEY, 'hex'));
+  const key = createSecretKey(Buffer.from(env.SIGNATURE_ENCRYPTION_KEY!, 'hex'));
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
@@ -70,7 +70,7 @@ export function decryptSecret(encryptedSecret: string): string {
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
   const encrypted = Buffer.from(encryptedHex, 'hex');
-  const key = createSecretKey(Buffer.from(env.SIGNATURE_ENCRYPTION_KEY, 'hex'));
+  const key = createSecretKey(Buffer.from(env.SIGNATURE_ENCRYPTION_KEY!, 'hex'));
   const decipher = createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(authTag);
   const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
