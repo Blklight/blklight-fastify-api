@@ -5,6 +5,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 ## Current Status
 
 Session 26 complete — form schemas generated.
+Sessions 27–29 planned: canvas + post-its, platform apps/onboarding, semantic memory.
 
 ## Tech Stack
 
@@ -17,6 +18,8 @@ Session 26 complete — form schemas generated.
 - **IDs**: CUID2
 - **API Docs**: @fastify/swagger + @scalar/fastify-api-reference
 - **Email**: Resend with persistent queue + React Email
+- **Embeddings**: Google Gemini text-embedding-004 (via REST, no SDK)
+- **Vector search**: pgvector extension on PostgreSQL
 
 ## Folder Structure
 
@@ -45,73 +48,90 @@ src/
       documents.schema.ts - Drizzle schema: documents, document_styles, document_types
       documents.zod.ts - Zod validation schemas
     document-style-templates/
-      document-style-templates.routes.ts - Style template route handlers
-      document-style-templates.service.ts - Style template business logic
+      document-style-templates.routes.ts
+      document-style-templates.service.ts
       document-style-templates.schema.ts - Drizzle schema: document_style_templates
-      document-style-templates.zod.ts - Zod validation schemas
+      document-style-templates.zod.ts
     tutorial-exercises/
-      tutorial-exercises.routes.ts - Tutorial exercise route handlers
-      tutorial-exercises.service.ts - Tutorial exercise business logic
+      tutorial-exercises.routes.ts
+      tutorial-exercises.service.ts
       tutorial-exercises.schema.ts - Drizzle schema: tutorial_exercises, exercise_submissions
-      tutorial-exercises.zod.ts - Zod validation schemas
+      tutorial-exercises.zod.ts
     likes/
-      likes.routes.ts - Like route handlers
-      likes.service.ts - Like business logic
+      likes.routes.ts
+      likes.service.ts
       likes.schema.ts - Drizzle schema: document_likes
     bookmarks/
-      bookmarks.routes.ts - Bookmark route handlers
-      bookmarks.service.ts - Bookmark business logic
+      bookmarks.routes.ts
+      bookmarks.service.ts
       bookmarks.schema.ts - Drizzle schema: document_bookmarks
     categories/
       categories.routes.ts - Category route handlers (public + admin)
-      categories.service.ts - Category business logic
+      categories.service.ts
       categories.schema.ts - Drizzle schema: categories, document_categories
     tags/
       tags.routes.ts - Tag route handlers (public)
-      tags.service.ts - Tag business logic
+      tags.service.ts
       tags.schema.ts - Drizzle schema: tags, document_tags
     books/
-      books.routes.ts - Book route handlers (auth required)
-      books.service.ts - Book business logic
+      books.routes.ts
+      books.service.ts
       books.schema.ts - Drizzle schema: books, book_chapters, book_category, book_tags, book_progress, book_chapter_progress
-      books.zod.ts - Zod validation schemas
+      books.zod.ts
     highlights/
-      highlights.routes.ts - Highlight route handlers
-      highlights.service.ts - Highlight business logic
+      highlights.routes.ts
+      highlights.service.ts
       highlights.schema.ts - Drizzle schema: highlights, highlight_palette
-      highlights.zod.ts - Zod validation schemas
+      highlights.zod.ts
     workspace/
-      workspace.routes.ts - Workspace route handlers
-      workspace.service.ts - Workspace business logic
+      workspace.routes.ts
+      workspace.service.ts
       workspace.schema.ts - Drizzle schema: workspaces, workspace_members
-      workspace.zod.ts - Zod validation schemas
+      workspace.zod.ts
+    canvas/
+      canvas.routes.ts - Canvas route handlers
+      canvas.service.ts - Canvas business logic
+      canvas.schema.ts - Drizzle schema: canvas, canvas_positions
+      canvas.zod.ts
     notes/
-      notes.routes.ts - Note route handlers
-      notes.service.ts - Note business logic
-      notes.schema.ts - Drizzle schema: notes
-      notes.zod.ts - Zod validation schemas
+      notes.routes.ts
+      notes.service.ts
+      notes.schema.ts - Drizzle schema: notes (now references canvas_id)
+      notes.zod.ts
     journals/
-      journals.routes.ts - Journal route handlers
-      journals.service.ts - Journal business logic
+      journals.routes.ts
+      journals.service.ts
       journals.schema.ts - Drizzle schema: journals, journal_highlights
-      journals.zod.ts - Zod validation schemas
+      journals.zod.ts
     follows/
-      follows.routes.ts - Follow route handlers
-      follows.service.ts - Follow business logic
+      follows.routes.ts
+      follows.service.ts
       follows.schema.ts - Drizzle schema: follows
+    platform-apps/
+      platform-apps.routes.ts - App catalog + user app activation
+      platform-apps.service.ts
+      platform-apps.schema.ts - Drizzle schema: platform_apps, user_apps
+      platform-apps.zod.ts
+    memory/
+      memory.routes.ts - Semantic search + related + digest
+      memory.service.ts - Embedding generation + similarity search
+      memory.schema.ts - Drizzle schema: embeddings
+      memory.zod.ts
+      memory.job.ts - Background indexing job (fire-and-forget)
     email/
       email.service.ts - Email queue management + send logic
       email.queue.ts - Queue processor (setInterval)
       email.schema.ts - Drizzle schema: email_verifications, password_resets, email_queue
       email.templates/
-        verification.tsx - React Email template
-        welcome.tsx - React Email template
-        password-reset.tsx - React Email template
+        verification.tsx
+        welcome.tsx
+        password-reset.tsx
+        memory-digest.tsx - Weekly semantic connections digest
         index.ts - Exports compiled HTML functions
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
-    seed.ts         - Database seeder (categories, tags)
+    seed.ts         - Database seeder (categories, tags, platform_apps)
   utils/
     crypto.ts       - Password hashing + document signing utilities
     errors.ts       - Custom error classes
@@ -130,11 +150,11 @@ tests/
 vitest.config.ts   - Vitest test configuration
 types/
   api.types.ts     - Complete TypeScript types for frontend
-  form.schemas.ts - Zod validation schemas for frontend forms
+  form.schemas.ts  - Zod validation schemas for frontend forms
 docs/
-  SECURITY.md              - Security audit findings and recommendations
-  SECURITY_REMEDIATION.md  - Detailed remediation steps for each finding
-  SECURITY_SESSIONS.md     - Mapping findings to fix sessions
+  SECURITY.md
+  SECURITY_REMEDIATION.md
+  SECURITY_SESSIONS.md
 ```
 
 ## Code Style
@@ -155,402 +175,511 @@ docs/
 ## Database Schema
 
 ### users (identity — private)
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| email | text | unique, not null |
-| username | text | unique, not null |
-| password_hash | text | nullable (null for OAuth) |
-| salt | text | nullable |
-| email_verified | boolean | default false |
-| role | text | 'user' or 'admin' |
-| github_id | text | unique, nullable |
-| google_id | text | unique, nullable |
-| onboarding_complete | boolean | default false (set true after username chosen) |
-| deleted_at | timestamp | nullable (soft delete) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column              | Type      | Notes                     |
+| ------------------- | --------- | ------------------------- |
+| id                  | text      | CUID2, primary key        |
+| email               | text      | unique, not null          |
+| username            | text      | unique, not null          |
+| password_hash       | text      | nullable (null for OAuth) |
+| salt                | text      | nullable                  |
+| email_verified      | boolean   | default false             |
+| role                | text      | 'user' or 'admin'         |
+| github_id           | text      | unique, nullable          |
+| google_id           | text      | unique, nullable          |
+| onboarding_complete | boolean   | default false             |
+| deleted_at          | timestamp | nullable (soft delete)    |
+| created_at          | timestamp | default now()             |
+| updated_at          | timestamp | default now()             |
 
 ### sessions
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| refresh_token | text | unique, not null |
-| expires_at | timestamp | not null |
-| created_at | timestamp | default now() |
+
+| Column        | Type      | Notes                  |
+| ------------- | --------- | ---------------------- |
+| id            | text      | CUID2, primary key     |
+| user_id       | text      | foreign key → users.id |
+| refresh_token | text      | unique, not null       |
+| expires_at    | timestamp | not null               |
+| created_at    | timestamp | default now()          |
 
 ### email_verifications
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | unique, foreign key → users.id |
-| token | text | unique, not null |
-| expires_at | timestamp | not null |
-| created_at | timestamp | default now() |
+
+| Column     | Type      | Notes                          |
+| ---------- | --------- | ------------------------------ |
+| id         | text      | CUID2, primary key             |
+| user_id    | text      | unique, foreign key → users.id |
+| token      | text      | unique, not null               |
+| expires_at | timestamp | not null                       |
+| created_at | timestamp | default now()                  |
 
 ### password_resets
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| token | text | unique, not null |
-| expires_at | timestamp | not null |
-| used_at | timestamp | nullable (null = not yet used) |
-| created_at | timestamp | default now() |
+
+| Column     | Type      | Notes                  |
+| ---------- | --------- | ---------------------- |
+| id         | text      | CUID2, primary key     |
+| user_id    | text      | foreign key → users.id |
+| token      | text      | unique, not null       |
+| expires_at | timestamp | not null               |
+| used_at    | timestamp | nullable               |
+| created_at | timestamp | default now()          |
 
 ### email_queue
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| to | text | not null (recipient email) |
-| subject | text | not null |
-| html | text | not null (compiled HTML from React Email) |
-| status | text | default 'pending' ('pending' | 'sent' | 'failed') |
-| attempts | integer | default 0 |
-| last_error | text | nullable (last error message if failed) |
-| scheduled_at | timestamp | default now() |
-| sent_at | timestamp | nullable |
-| created_at | timestamp | default now() |
+
+| Column       | Type      | Notes                           |
+| ------------ | --------- | ------------------------------- |
+| id           | text      | CUID2, primary key              |
+| to           | text      | not null                        |
+| subject      | text      | not null                        |
+| html         | text      | not null                        |
+| status       | text      | 'pending' \| 'sent' \| 'failed' |
+| attempts     | integer   | default 0                       |
+| last_error   | text      | nullable                        |
+| scheduled_at | timestamp | default now()                   |
+| sent_at      | timestamp | nullable                        |
+| created_at   | timestamp | default now()                   |
 
 ### profiles (public — one-to-one with users)
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | unique, foreign key → users.id |
-| username | text | unique, mirrored from users |
-| display_name | text | nullable |
-| bio | text | nullable |
-| bio_private | text | nullable (shown to non-followers on private profiles) |
-| avatar_url | text | nullable |
-| social_links | jsonb | nullable |
-| is_private | boolean | default false |
-| deleted_at | timestamp | nullable (soft delete) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column       | Type      | Notes                          |
+| ------------ | --------- | ------------------------------ |
+| id           | text      | CUID2, primary key             |
+| user_id      | text      | unique, foreign key → users.id |
+| username     | text      | unique, mirrored from users    |
+| display_name | text      | nullable                       |
+| bio          | text      | nullable                       |
+| bio_private  | text      | nullable                       |
+| avatar_url   | text      | nullable                       |
+| social_links | jsonb     | nullable                       |
+| is_private   | boolean   | default false                  |
+| deleted_at   | timestamp | nullable (soft delete)         |
+| created_at   | timestamp | default now()                  |
+| updated_at   | timestamp | default now()                  |
 
 ### signatures (authorship identity)
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | unique, foreign key → users.id |
-| user_hash | text | unique, public authorship identity |
-| secret_encrypted | text | AES-256-GCM encrypted per-user secret |
-| tx_hash | text | nullable, reserved for blockchain migration |
-| created_at | timestamp | default now() |
+
+| Column           | Type      | Notes                                       |
+| ---------------- | --------- | ------------------------------------------- |
+| id               | text      | CUID2, primary key                          |
+| user_id          | text      | unique, foreign key → users.id              |
+| user_hash        | text      | unique, public authorship identity          |
+| secret_encrypted | text      | AES-256-GCM encrypted per-user secret       |
+| tx_hash          | text      | nullable, reserved for blockchain migration |
+| created_at       | timestamp | default now()                               |
+
+### platform_apps (app catalog — seeded)
+
+| Column      | Type      | Notes                                                           |
+| ----------- | --------- | --------------------------------------------------------------- |
+| id          | text      | CUID2, primary key                                              |
+| slug        | text      | unique, not null ('canvas', 'publisher', 'reader', 'dev-tools') |
+| name        | text      | not null                                                        |
+| description | text      | nullable                                                        |
+| is_active   | boolean   | default true (global kill switch)                               |
+| created_at  | timestamp | default now()                                                   |
+
+### user_apps (apps activated per user)
+
+| Column       | Type      | Notes                          |
+| ------------ | --------- | ------------------------------ |
+| id           | text      | CUID2, primary key             |
+| user_id      | text      | foreign key → users.id         |
+| app_id       | text      | foreign key → platform_apps.id |
+| activated_at | timestamp | default now()                  |
+
+Unique constraint: (user_id, app_id)
+
+### workspaces
+
+| Column       | Type      | Notes                          |
+| ------------ | --------- | ------------------------------ |
+| id           | text      | CUID2, primary key             |
+| owner_id     | text      | unique, foreign key → users.id |
+| type         | text      | 'personal' \| 'team'           |
+| name         | text      | not null                       |
+| is_personal  | boolean   | default true                   |
+| color_labels | jsonb     | nullable                       |
+| created_at   | timestamp | default now()                  |
+| updated_at   | timestamp | default now()                  |
+
+### workspace_members
+
+| Column       | Type      | Notes                          |
+| ------------ | --------- | ------------------------------ |
+| id           | text      | CUID2, primary key             |
+| workspace_id | text      | foreign key → workspaces.id    |
+| user_id      | text      | foreign key → users.id         |
+| role         | text      | 'owner' \| 'admin' \| 'member' |
+| created_at   | timestamp | default now()                  |
+
+Unique constraint: (workspace_id, user_id)
+
+### canvas (one-to-one with workspace)
+
+| Column       | Type      | Notes                               |
+| ------------ | --------- | ----------------------------------- |
+| id           | text      | CUID2, primary key                  |
+| workspace_id | text      | unique, foreign key → workspaces.id |
+| created_at   | timestamp | default now()                       |
+| updated_at   | timestamp | default now()                       |
+
+### canvas_positions (spatial layout of notes on canvas)
+
+| Column     | Type      | Notes                          |
+| ---------- | --------- | ------------------------------ |
+| id         | text      | CUID2, primary key             |
+| canvas_id  | text      | foreign key → canvas.id        |
+| note_id    | text      | unique, foreign key → notes.id |
+| x          | real      | horizontal position            |
+| y          | real      | vertical position              |
+| w          | real      | width (default 200)            |
+| h          | real      | height (default 150)           |
+| z          | integer   | stack order (default 0)        |
+| updated_at | timestamp | default now()                  |
+
+Unique constraint: (canvas_id, note_id)
+
+### notes (post-its — belong to canvas)
+
+| Column     | Type      | Notes                                  |
+| ---------- | --------- | -------------------------------------- |
+| id         | text      | CUID2, primary key                     |
+| canvas_id  | text      | foreign key → canvas.id                |
+| title      | text      | nullable                               |
+| content    | text      | markdown string                        |
+| type       | text      | 'text' \| 'code' \| 'list'             |
+| language   | text      | nullable (required when type = 'code') |
+| color      | text      | Tailwind color name, default 'yellow'  |
+| deleted_at | timestamp | nullable (soft delete)                 |
+| created_at | timestamp | default now()                          |
+| updated_at | timestamp | default now()                          |
+
+Note: `canvas_id` replaces the former `workspace_id`. Canvas is the spatial
+container for notes. Workspace is the owner of canvas. Notes never reference
+workspace directly.
+
+### embeddings (semantic memory — transversal)
+
+| Column      | Type        | Notes                                                         |
+| ----------- | ----------- | ------------------------------------------------------------- |
+| id          | text        | CUID2, primary key                                            |
+| user_id     | text        | foreign key → users.id                                        |
+| source_type | text        | 'note' \| 'document' \| 'journal_highlight' \| 'book_chapter' |
+| source_id   | text        | ID of the indexed entity in its own table                     |
+| embedding   | vector(768) | pgvector column — requires CREATE EXTENSION vector            |
+| indexed_at  | timestamp   | default now()                                                 |
+| created_at  | timestamp   | default now()                                                 |
+
+Unique constraint: (user_id, source_type, source_id)
+
+Requires: `CREATE EXTENSION IF NOT EXISTS vector;` before running migrations.
 
 ### document_types (seeded on migration)
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| name | text | unique (article, tutorial, contract, project, page) |
-| created_at | timestamp | default now() |
+
+| Column     | Type      | Notes                                               |
+| ---------- | --------- | --------------------------------------------------- |
+| id         | text      | CUID2, primary key                                  |
+| name       | text      | unique (article, tutorial, contract, project, page) |
+| created_at | timestamp | default now()                                       |
 
 ### documents
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| author_id | text | foreign key → profiles.id |
-| type_id | text | foreign key → document_types.id |
-| status | text | 'draft' \| 'published' \| 'archived' |
-| title | text | not null |
-| abstract | text | nullable |
-| content | jsonb | nullable (TipTap JSON) |
-| cover_image_url | text | nullable |
-| slug | text | unique per author (author_id + slug) |
-| authorship | jsonb | set on publish, null while draft |
-| published_at | timestamp | nullable |
-| deleted_at | timestamp | nullable (soft delete) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column          | Type      | Notes                                |
+| --------------- | --------- | ------------------------------------ |
+| id              | text      | CUID2, primary key                   |
+| author_id       | text      | foreign key → profiles.id            |
+| type_id         | text      | foreign key → document_types.id      |
+| status          | text      | 'draft' \| 'published' \| 'archived' |
+| title           | text      | not null                             |
+| abstract        | text      | nullable                             |
+| content         | jsonb     | nullable (TipTap JSON)               |
+| cover_image_url | text      | nullable                             |
+| slug            | text      | unique per author (author_id + slug) |
+| authorship      | jsonb     | set on publish, null while draft     |
+| published_at    | timestamp | nullable                             |
+| deleted_at      | timestamp | nullable (soft delete)               |
+| created_at      | timestamp | default now()                        |
+| updated_at      | timestamp | default now()                        |
 
 ### document_styles
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| document_id | text | unique, foreign key → documents.id |
-| typography | text | 'sans' \| 'serif' \| 'mono' |
-| paper_style | jsonb | nullable |
-| paper_texture | jsonb | nullable |
-| cover_settings | jsonb | nullable |
-| document_header | jsonb | nullable |
-| document_footer | jsonb | nullable |
-| document_signature | jsonb | nullable |
-| updated_at | timestamp | default now() |
+
+| Column             | Type      | Notes                              |
+| ------------------ | --------- | ---------------------------------- |
+| id                 | text      | CUID2, primary key                 |
+| document_id        | text      | unique, foreign key → documents.id |
+| typography         | text      | 'sans' \| 'serif' \| 'mono'        |
+| paper_style        | jsonb     | nullable                           |
+| paper_texture      | jsonb     | nullable                           |
+| cover_settings     | jsonb     | nullable                           |
+| document_header    | jsonb     | nullable                           |
+| document_footer    | jsonb     | nullable                           |
+| document_signature | jsonb     | nullable                           |
+| updated_at         | timestamp | default now()                      |
 
 ### document_style_templates
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| author_id | text | foreign key → profiles.id |
-| name | text | not null, max 50 |
-| document_type | text | nullable (null = applies to any type) |
-| typography | text | 'sans' \| 'serif' \| 'mono' |
-| paper_style | jsonb | nullable |
-| paper_texture | jsonb | nullable |
-| document_header | jsonb | nullable |
-| document_footer | jsonb | nullable |
-| created_at | timestamp | default now() |
+
+| Column          | Type      | Notes                       |
+| --------------- | --------- | --------------------------- |
+| id              | text      | CUID2, primary key          |
+| author_id       | text      | foreign key → profiles.id   |
+| name            | text      | not null, max 50            |
+| document_type   | text      | nullable                    |
+| typography      | text      | 'sans' \| 'serif' \| 'mono' |
+| paper_style     | jsonb     | nullable                    |
+| paper_texture   | jsonb     | nullable                    |
+| document_header | jsonb     | nullable                    |
+| document_footer | jsonb     | nullable                    |
+| created_at      | timestamp | default now()               |
 
 ### tutorial_exercises
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| document_id | text | foreign key → documents.id |
-| type | text | 'code' \| 'quiz' |
-| data | jsonb | exercise data (shape varies by type) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column      | Type      | Notes                                |
+| ----------- | --------- | ------------------------------------ |
+| id          | text      | CUID2, primary key                   |
+| document_id | text      | foreign key → documents.id           |
+| type        | text      | 'code' \| 'quiz'                     |
+| data        | jsonb     | exercise data (shape varies by type) |
+| created_at  | timestamp | default now()                        |
+| updated_at  | timestamp | default now()                        |
 
 ### exercise_submissions
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| exercise_id | text | foreign key → tutorial_exercises.id |
-| attempts | jsonb | array of attempt objects |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column      | Type      | Notes                               |
+| ----------- | --------- | ----------------------------------- |
+| id          | text      | CUID2, primary key                  |
+| user_id     | text      | foreign key → users.id              |
+| exercise_id | text      | foreign key → tutorial_exercises.id |
+| attempts    | jsonb     | array of attempt objects            |
+| created_at  | timestamp | default now()                       |
+| updated_at  | timestamp | default now()                       |
 
 Unique constraint: (user_id, exercise_id)
 
 ### document_likes
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| document_id | text | foreign key → documents.id |
-| created_at | timestamp | default now() |
+
+| Column      | Type      | Notes                      |
+| ----------- | --------- | -------------------------- |
+| id          | text      | CUID2, primary key         |
+| user_id     | text      | foreign key → users.id     |
+| document_id | text      | foreign key → documents.id |
+| created_at  | timestamp | default now()              |
 
 Unique constraint: (user_id, document_id)
 
 ### document_bookmarks
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| document_id | text | foreign key → documents.id |
-| created_at | timestamp | default now() |
+
+| Column      | Type      | Notes                      |
+| ----------- | --------- | -------------------------- |
+| id          | text      | CUID2, primary key         |
+| user_id     | text      | foreign key → users.id     |
+| document_id | text      | foreign key → documents.id |
+| created_at  | timestamp | default now()              |
 
 Unique constraint: (user_id, document_id)
 
 ### categories
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| name | text | not null |
-| slug | text | unique, not null |
-| description | text | nullable |
-| parent_id | text | self-referential, nullable (hierarchy) |
-| created_at | timestamp | default now() |
+
+| Column      | Type      | Notes                      |
+| ----------- | --------- | -------------------------- |
+| id          | text      | CUID2, primary key         |
+| name        | text      | not null                   |
+| slug        | text      | unique, not null           |
+| description | text      | nullable                   |
+| parent_id   | text      | self-referential, nullable |
+| created_at  | timestamp | default now()              |
 
 ### tags
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| name | text | unique, not null (normalized to lowercase) |
-| slug | text | unique, not null |
-| created_at | timestamp | default now() |
+
+| Column     | Type      | Notes                                      |
+| ---------- | --------- | ------------------------------------------ |
+| id         | text      | CUID2, primary key                         |
+| name       | text      | unique, not null (normalized to lowercase) |
+| slug       | text      | unique, not null                           |
+| created_at | timestamp | default now()                              |
 
 ### document_categories
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| document_id | text | foreign key → documents.id, unique |
-| category_id | text | foreign key → categories.id |
-| created_at | timestamp | default now() |
+
+| Column      | Type      | Notes                              |
+| ----------- | --------- | ---------------------------------- |
+| id          | text      | CUID2, primary key                 |
+| document_id | text      | foreign key → documents.id, unique |
+| category_id | text      | foreign key → categories.id        |
+| created_at  | timestamp | default now()                      |
 
 ### document_tags
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| document_id | text | foreign key → documents.id |
-| tag_id | text | foreign key → tags.id |
-| created_at | timestamp | default now() |
+
+| Column      | Type      | Notes                      |
+| ----------- | --------- | -------------------------- |
+| id          | text      | CUID2, primary key         |
+| document_id | text      | foreign key → documents.id |
+| tag_id      | text      | foreign key → tags.id      |
+| created_at  | timestamp | default now()              |
 
 Unique constraint: (document_id, tag_id)
 
 ### books
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| author_id | text | foreign key → profiles.id |
-| status | text | 'draft' \| 'published' |
-| title | text | not null |
-| description | text | nullable |
-| cover_image_url | text | nullable |
-| slug | text | unique per author (author_id + slug) |
-| toc | jsonb | auto-generated but editable, null on draft |
-| authorship | jsonb | set on publish |
-| deleted_at | timestamp | nullable (soft delete) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column          | Type      | Notes                                      |
+| --------------- | --------- | ------------------------------------------ |
+| id              | text      | CUID2, primary key                         |
+| author_id       | text      | foreign key → profiles.id                  |
+| status          | text      | 'draft' \| 'published'                     |
+| title           | text      | not null                                   |
+| description     | text      | nullable                                   |
+| cover_image_url | text      | nullable                                   |
+| slug            | text      | unique per author (author_id + slug)       |
+| toc             | jsonb     | auto-generated but editable, null on draft |
+| authorship      | jsonb     | set on publish                             |
+| deleted_at      | timestamp | nullable (soft delete)                     |
+| created_at      | timestamp | default now()                              |
+| updated_at      | timestamp | default now()                              |
 
 ### book_chapters
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| book_id | text | foreign key → books.id |
-| document_id | text | foreign key → documents.id |
-| position | integer | order within the book |
-| intro_text | text | nullable (transition before chapter) |
-| outro_text | text | nullable (transition after chapter) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column      | Type      | Notes                      |
+| ----------- | --------- | -------------------------- |
+| id          | text      | CUID2, primary key         |
+| book_id     | text      | foreign key → books.id     |
+| document_id | text      | foreign key → documents.id |
+| position    | integer   | order within the book      |
+| intro_text  | text      | nullable                   |
+| outro_text  | text      | nullable                   |
+| created_at  | timestamp | default now()              |
+| updated_at  | timestamp | default now()              |
 
 Unique constraint: (book_id, document_id)
 Unique constraint: (book_id, position)
 
 ### book_category
-| Column | Type | Notes |
-|--------|------|-------|
-| book_id | text | primary key, foreign key → books.id |
-| category_id | text | foreign key → categories.id |
+
+| Column      | Type | Notes                               |
+| ----------- | ---- | ----------------------------------- |
+| book_id     | text | primary key, foreign key → books.id |
+| category_id | text | foreign key → categories.id         |
 
 ### book_tags
-| Column | Type | Notes |
-|--------|------|-------|
+
+| Column  | Type | Notes                  |
+| ------- | ---- | ---------------------- |
 | book_id | text | foreign key → books.id |
-| tag_id | text | foreign key → tags.id |
+| tag_id  | text | foreign key → tags.id  |
 
 Unique constraint: (book_id, tag_id)
 
 ### book_progress
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| book_id | text | foreign key → books.id |
-| last_chapter_id | text | foreign key → book_chapters.id |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column          | Type      | Notes                          |
+| --------------- | --------- | ------------------------------ |
+| id              | text      | CUID2, primary key             |
+| user_id         | text      | foreign key → users.id         |
+| book_id         | text      | foreign key → books.id         |
+| last_chapter_id | text      | foreign key → book_chapters.id |
+| created_at      | timestamp | default now()                  |
+| updated_at      | timestamp | default now()                  |
 
 Unique constraint: (user_id, book_id)
 
 ### book_chapter_progress
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| user_id | text | foreign key → users.id |
-| chapter_id | text | foreign key → book_chapters.id |
-| is_read | boolean | default false |
-| read_at | timestamp | nullable |
+
+| Column     | Type      | Notes                          |
+| ---------- | --------- | ------------------------------ |
+| id         | text      | CUID2, primary key             |
+| user_id    | text      | foreign key → users.id         |
+| chapter_id | text      | foreign key → book_chapters.id |
+| is_read    | boolean   | default false                  |
+| read_at    | timestamp | nullable                       |
 
 Unique constraint: (user_id, chapter_id)
 
-### workspaces
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| owner_id | text | unique, foreign key → users.id |
-| type | text | 'personal' \| 'team' |
-| name | text | not null |
-| is_personal | boolean | default true |
-| color_labels | jsonb | nullable (user's personal color categorization) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+### highlights
 
-### workspace_members
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| workspace_id | text | foreign key → workspaces.id |
-| user_id | text | foreign key → users.id |
-| role | text | 'owner' \| 'admin' \| 'member' |
-| created_at | timestamp | default now() |
+| Column      | Type      | Notes                                        |
+| ----------- | --------- | -------------------------------------------- |
+| id          | text      | CUID2, primary key                           |
+| user_id     | text      | foreign key → users.id                       |
+| document_id | text      | foreign key → documents.id                   |
+| text        | text      | highlighted text content                     |
+| color       | text      | color from user palette                      |
+| position    | jsonb     | JSONB: { nodeIndex, offsetStart, offsetEnd } |
+| created_at  | timestamp | default now()                                |
+| updated_at  | timestamp | default now()                                |
 
-Unique constraint: (workspace_id, user_id)
+### highlight_palette
 
-### notes
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| workspace_id | text | foreign key → workspaces.id |
-| title | text | nullable |
-| content | text | markdown string |
-| type | text | 'text' \| 'code' \| 'list' |
-| language | text | nullable (required when type = 'code') |
-| color | text | Tailwind color name, default 'yellow' |
-| deleted_at | timestamp | nullable (soft delete) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+| Column     | Type      | Notes                              |
+| ---------- | --------- | ---------------------------------- |
+| id         | text      | CUID2, primary key                 |
+| user_id    | text      | unique, foreign key → users.id     |
+| colors     | jsonb     | array of hex color strings (max 5) |
+| updated_at | timestamp | default now()                      |
 
 ### journals
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| workspace_id | text | foreign key → workspaces.id |
-| title | text | not null, max 200 |
-| description | text | nullable, max 500 |
-| color | text | default 'indigo', must be NOTE_COLORS |
-| deleted_at | timestamp | nullable (soft delete) |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column       | Type      | Notes                                 |
+| ------------ | --------- | ------------------------------------- |
+| id           | text      | CUID2, primary key                    |
+| workspace_id | text      | foreign key → workspaces.id           |
+| title        | text      | not null, max 200                     |
+| description  | text      | nullable, max 500                     |
+| color        | text      | default 'indigo', must be NOTE_COLORS |
+| deleted_at   | timestamp | nullable (soft delete)                |
+| created_at   | timestamp | default now()                         |
+| updated_at   | timestamp | default now()                         |
 
 ### journal_highlights
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| journal_id | text | foreign key → journals.id |
-| highlight_id | text | foreign key → highlights.id |
-| position | integer | order within the journal |
-| created_at | timestamp | default now() |
+
+| Column       | Type      | Notes                       |
+| ------------ | --------- | --------------------------- |
+| id           | text      | CUID2, primary key          |
+| journal_id   | text      | foreign key → journals.id   |
+| highlight_id | text      | foreign key → highlights.id |
+| position     | integer   | order within the journal    |
+| created_at   | timestamp | default now()               |
 
 Unique constraint: (journal_id, highlight_id)
 Unique constraint: (journal_id, position)
 
 ### follows
-| Column | Type | Notes |
-|--------|------|-------|
-| id | text | CUID2, primary key |
-| follower_id | text | foreign key → profiles.id |
-| following_id | text | foreign key → profiles.id |
-| status | text | default 'accepted' ('pending' | 'accepted' | 'rejected') |
-| created_at | timestamp | default now() |
-| updated_at | timestamp | default now() |
+
+| Column       | Type      | Notes                                 |
+| ------------ | --------- | ------------------------------------- |
+| id           | text      | CUID2, primary key                    |
+| follower_id  | text      | foreign key → profiles.id             |
+| following_id | text      | foreign key → profiles.id             |
+| status       | text      | 'pending' \| 'accepted' \| 'rejected' |
+| created_at   | timestamp | default now()                         |
+| updated_at   | timestamp | default now()                         |
 
 Unique constraint: (follower_id, following_id)
 
 ## Available Scripts
 
-| Script | Description |
-|--------|-------------|
-| `npm run dev` | Start dev server with hot reload (tsx watch) |
-| `npm run build` | Compile TypeScript to JavaScript |
-| `npm run start` | Run production server from dist/ |
-| `npm run db:generate` | Generate Drizzle migrations |
-| `npm run db:migrate` | Run pending migrations |
-| `npm run db:seed` | Seed database (categories, tags) |
-| `npm run db:studio` | Open Drizzle Studio |
-| `npm test` | Run all tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run test:coverage` | Run tests with coverage |
+| Script                  | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `npm run dev`           | Start dev server with hot reload (tsx watch)    |
+| `npm run build`         | Compile TypeScript to JavaScript                |
+| `npm run start`         | Run production server from dist/                |
+| `npm run db:generate`   | Generate Drizzle migrations                     |
+| `npm run db:migrate`    | Run pending migrations                          |
+| `npm run db:seed`       | Seed database (categories, tags, platform_apps) |
+| `npm run db:studio`     | Open Drizzle Studio                             |
+| `npm test`              | Run all tests                                   |
+| `npm run test:watch`    | Run tests in watch mode                         |
+| `npm run test:coverage` | Run tests with coverage                         |
 
 ## How to Run Locally
 
 > **Note:** Docker must be running before starting the server.
 
 ```bash
-# 1. Copy environment file
 cp .env.example .env.development
-
-# 2. Start PostgreSQL with Docker
 docker compose up -d
-
-# 3. Install dependencies
 npm install
-
-# 4. Generate database migrations
 npm run db:generate
-
-# 5. Apply migrations
 npm run db:migrate
-
-# 6. Start development server
 npm run dev
 ```
 
-Server runs at http://localhost:3000  
+Server runs at http://localhost:3000
 API docs at http://localhost:3000/docs
 
 ## Architectural Decisions
@@ -585,10 +714,10 @@ API docs at http://localhost:3000/docs
 - **Public routes never require authentication** — response shape is identical for all visitors
 - **Cursor encodes { published_at, id } as opaque base64 JSON string** — enables stable pagination
 - **DocumentCard never includes content field** — summary only, no full text
-- **Deleted users/profiles/documents always excluded from public queries** — triple check on documents.deleted_at, profiles.deleted_at, users.deleted_at
+- **Deleted users/profiles/documents always excluded from public queries**
 - **Tutorial exercises included in full document read** — never in DocumentCard feed responses
 - **sort=popular is now active** — orders by likes_count DESC, published_at DESC
-- **likes_count always computed via COUNT(*)** — never stored in documents table
+- **likes_count always computed via COUNT(\*)** — never stored in documents table
 - **liked_by_me is null for unauthenticated requests** — not false
 - **Bookmarks are always private** — only owner can see their bookmarks
 - **toggleLike and toggleBookmark are idempotent** — safe to call multiple times
@@ -620,15 +749,20 @@ API docs at http://localhost:3000/docs
 - **Highlights are independent** — journal relation added in Session 14
 - **Every user has exactly one personal workspace** — is_personal = true, created atomically in register transaction
 - **Workspace created atomically in register transaction** — users + profiles + signatures + workspaces (4 tables)
+- **Canvas created atomically with workspace** — workspace + canvas always exist together (5 tables on register)
 - **workspace_members table exists but has no routes** — reserved for future team workspaces
-- **Notes belong to workspace via workspace_id** — never directly to users
-- **resolveWorkspaceId() is the internal bridge** — userId → workspaceId for all notes operations
+- **Notes belong to canvas via canvas_id** — never directly to workspace or user
+- **resolveCanvasId() is the internal bridge** — userId → canvasId for all notes operations (replaces resolveWorkspaceId)
+- **canvas_positions is a separate table** — spatial layout is decoupled from note content
+- **canvas_positions uses upsert** — one position row per note, updated on move/resize
+- **Notes without a canvas_position are valid** — position is optional (list view vs canvas view)
 - **color_labels is optional jsonb in workspaces** — keys are NOTE_COLORS, values are free text labels
 - **Passing null to updateColorLabels() clears all labels**
 - **NOTE_COLORS imported from src/config/note-colors.ts** — never hardcoded
 - **language field required when note type is 'code'** — enforced in Zod .refine()
 - **Notes are soft-deleted** — deleted_at set, never hard deleted
-- **cursor.ts now uses generic timestamp field** — works for any date column (published_at, updated_at, created_at)
+- **Deleting a note also removes its canvas_position and embedding** — done in same transaction
+- **cursor.ts now uses generic timestamp field** — works for any date column
 - **Maximum 2 journals per user** — hard limit enforced in createJournal()
 - **Journals belong to workspace via workspace_id** — never directly to users
 - **Highlights added manually** — never auto-populated
@@ -638,352 +772,211 @@ API docs at http://localhost:3000/docs
 - **Colors use NOTE_COLORS** — for consistency with notes
 - **follows reference profiles.id** — never users.id
 - **Private profiles hide everything** — only accepted followers see content
-- **Follow counts always computed via COUNT(*)** — never stored in profiles
+- **Follow counts always computed via COUNT(\*)** — never stored in profiles
 - **Rejected follow requests are hard deleted** — not kept as 'rejected'
-- **getFollowingFeed excludes documents from private profiles** — where viewer is not an accepted follower
+- **getFollowingFeed excludes documents from private profiles**
 - **GET /profiles/:username accepts optional auth** — for is_following field
 - **is_following = null for unauthenticated** — not false
 - **follow_status shows pending state** — useful for follow button UI
+- **platform_apps are seeded** — never created via API by regular users
+- **user_apps uses upsert** — activating an already-active app is a no-op
+- **onboarding_complete = true only after both steps are done** — username (OAuth) + app selection
+- **Email-registered users skip the username step** — onboarding starts at app selection
+- **FEATURE_MEMORY flag guards all memory routes and jobs** — if false, notes save normally with no side effects
+- **Embedding generation is always fire-and-forget** — never blocks note/document save response
+- **memory.job.ts calls Gemini text-embedding-004 via REST** — no SDK dependency
+- **embeddings table requires pgvector extension** — run CREATE EXTENSION IF NOT EXISTS vector before migrations
+- **Similarity search uses <=> operator** — cosine distance, lower = more similar
+- **HNSW index on embeddings.embedding** — required for sub-second search at scale
+- **Embedding deleted when source is deleted** — enforced in each feature's delete service function
+- **source_type + source_id is the universal pointer** — no FK constraint, resolved at query time
+- **Memory digest sent via existing email queue** — same pattern as other transactional emails
+- **GEMINI_API_KEY added to env.ts** — required when FEATURE_MEMORY=true
+
+## Onboarding Flow
+
+### Email registration
+
+1. POST /api/v1/auth/register → user + profile + signature + workspace + canvas created atomically
+2. Frontend redirects to app selection screen
+3. POST /api/v1/platform-apps/me → activates selected apps, sets onboarding_complete = true
+4. Frontend redirects to dashboard
+
+### OAuth registration
+
+1. GET /api/v1/auth/github or /google → OAuth flow
+2. POST /api/v1/auth/onboarding → username chosen, profile + signature + workspace + canvas created atomically
+3. Frontend redirects to app selection screen
+4. POST /api/v1/platform-apps/me → activates selected apps, sets onboarding_complete = true
+5. Frontend redirects to dashboard
+
+## Platform Apps
+
+Apps available at launch (seeded in `db/seed.ts`):
+
+| Slug      | Name      | Description                                              |
+| --------- | --------- | -------------------------------------------------------- |
+| canvas    | Canvas    | Post-it canvas for capturing and connecting ideas        |
+| publisher | Publisher | Write and publish articles, tutorials, and books         |
+| reader    | Reader    | Highlight, annotate, and organize what you read          |
+| dev-tools | Dev Tools | Code notes, sandboxed exercises, and technical tutorials |
+
+## Feature Flags
+
+- **Feature flags centralized in src/config/features.ts**
+- **Always import features from features.ts — never read FEATURE\_\* env vars directly**
+- **requireFeature() throws 503 — use in route handlers only**
+- **Service-level checks use if (!features.x) return — silent skip**
+- **Default state: email=false, oauth=false, emailQueue=false, codeSandbox=true, memory=true**
+- **memory=true by default** — safe, degrades gracefully if GEMINI_API_KEY is missing
+- **Enabling oauth requires all 4 OAuth env vars to be set**
+- **Enabling email requires RESEND_API_KEY and EMAIL_FROM**
+- **emailQueue only works if email is also enabled**
+- **memory only generates embeddings if GEMINI_API_KEY is set** — otherwise silent no-op
 
 ## Response Format
 
 **Success:**
+
 ```json
 { "data": <payload>, "error": null, "message": "string" }
 ```
 
 **Error:**
+
 ```json
-{ "data": null, "error": { "code": "string", "message": "string" }, "message": "string" }
+{
+  "data": null,
+  "error": { "code": "string", "message": "string" },
+  "message": "string"
+}
 ```
 
 **Validation Error:**
+
 ```json
-{ "data": null, "error": { "code": "VALIDATION_ERROR", "message": "string", "fields": {} }, "message": "string" }
+{
+  "data": null,
+  "error": { "code": "VALIDATION_ERROR", "message": "string", "fields": {} },
+  "message": "string"
+}
 ```
 
 ## Auth Routes
 
-| Method | Endpoint | Description | Rate Limit |
-|--------|----------|-------------|------------|
-| POST | /api/v1/auth/register | Register new user | 5/min |
-| POST | /api/v1/auth/login | Login with email or username | 10/min |
-| POST | /api/v1/auth/refresh | Refresh access token | None |
-| POST | /api/v1/auth/logout | Logout and invalidate session | None |
-| POST | /api/v1/auth/verify-email | Verify email address | None |
-| POST | /api/v1/auth/resend-verification | Resend verification email | 3/hour |
-| POST | /api/v1/auth/forgot-password | Request password reset | 3/hour |
-| POST | /api/v1/auth/reset-password | Reset password | None |
-
-All auth routes return `{ data, error, message }` format. Refresh token is stored in httpOnly cookie.
+| Method | Endpoint                         | Description                   | Rate Limit |
+| ------ | -------------------------------- | ----------------------------- | ---------- |
+| POST   | /api/v1/auth/register            | Register new user             | 5/min      |
+| POST   | /api/v1/auth/login               | Login with email or username  | 10/min     |
+| POST   | /api/v1/auth/refresh             | Refresh access token          | None       |
+| POST   | /api/v1/auth/logout              | Logout and invalidate session | None       |
+| POST   | /api/v1/auth/verify-email        | Verify email address          | None       |
+| POST   | /api/v1/auth/resend-verification | Resend verification email     | 3/hour     |
+| POST   | /api/v1/auth/forgot-password     | Request password reset        | 3/hour     |
+| POST   | /api/v1/auth/reset-password      | Reset password                | None       |
 
 ## OAuth Routes
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/auth/github | No | Redirect to GitHub OAuth |
-| GET | /api/v1/auth/github/callback | No | GitHub OAuth callback |
-| GET | /api/v1/auth/github/link | Yes | Start GitHub account linking |
-| GET | /api/v1/auth/github/link/callback | Yes | GitHub linking callback |
-| GET | /api/v1/auth/google | No | Redirect to Google OAuth |
-| GET | /api/v1/auth/google/callback | No | Google OAuth callback |
-| GET | /api/v1/auth/google/link | Yes | Start Google account linking |
-| GET | /api/v1/auth/google/link/callback | Yes | Google linking callback |
-| POST | /api/v1/auth/onboarding | Yes | Complete OAuth user onboarding |
-| DELETE | /api/v1/auth/account/unlink/:provider | Yes | Unlink OAuth provider |
+| Method | Endpoint                              | Auth | Description                               |
+| ------ | ------------------------------------- | ---- | ----------------------------------------- |
+| GET    | /api/v1/auth/github                   | No   | Redirect to GitHub OAuth                  |
+| GET    | /api/v1/auth/github/callback          | No   | GitHub OAuth callback                     |
+| GET    | /api/v1/auth/github/link              | Yes  | Start GitHub account linking              |
+| GET    | /api/v1/auth/github/link/callback     | Yes  | GitHub linking callback                   |
+| GET    | /api/v1/auth/google                   | No   | Redirect to Google OAuth                  |
+| GET    | /api/v1/auth/google/callback          | No   | Google OAuth callback                     |
+| GET    | /api/v1/auth/google/link              | Yes  | Start Google account linking              |
+| GET    | /api/v1/auth/google/link/callback     | Yes  | Google linking callback                   |
+| POST   | /api/v1/auth/onboarding               | Yes  | Complete OAuth user onboarding (username) |
+| DELETE | /api/v1/auth/account/unlink/:provider | Yes  | Unlink OAuth provider                     |
 
 ## Profile Routes
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/profiles/:username | No | Get public profile |
-| GET | /api/v1/profiles/me | Yes | Get own profile |
-| PATCH | /api/v1/profiles/me | Yes | Update own profile |
-| DELETE | /api/v1/profiles/me | Yes | Delete own account |
+| Method | Endpoint                   | Auth | Description        |
+| ------ | -------------------------- | ---- | ------------------ |
+| GET    | /api/v1/profiles/:username | No   | Get public profile |
+| GET    | /api/v1/profiles/me        | Yes  | Get own profile    |
+| PATCH  | /api/v1/profiles/me        | Yes  | Update own profile |
+| DELETE | /api/v1/profiles/me        | Yes  | Delete own account |
 
-### Username Availability Rules
-- Username is blocked for 30 days after account deletion
-- When checking availability (register or update), the query excludes:
-  - Active users with the same username
-  - Deleted users where deleted_at > now() - interval '30 days'
+## Platform Apps Routes
 
-## Public Routes (No Auth Required)
+| Method | Endpoint                        | Auth | Description                           |
+| ------ | ------------------------------- | ---- | ------------------------------------- |
+| GET    | /api/v1/platform-apps           | No   | List all available apps               |
+| GET    | /api/v1/platform-apps/me        | Yes  | List apps activated by current user   |
+| POST   | /api/v1/platform-apps/me        | Yes  | Activate apps (onboarding + settings) |
+| DELETE | /api/v1/platform-apps/me/:appId | Yes  | Deactivate an app                     |
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | /api/v1/documents | Public document feed (cursor pagination) |
-| GET | /api/v1/documents/:username/:slug | Full public document (includes exercises for tutorials) |
-| GET | /api/v1/profiles/:username | Get public profile |
-| GET | /api/v1/profiles/:username/documents | Author's published documents (cursor pagination) |
-| GET | /api/v1/categories | Get all categories (hierarchical) |
-| GET | /api/v1/categories/:slug | Get a category by slug |
-| GET | /api/v1/tags/popular | Get popular tags sorted by usage |
+## Canvas Routes
 
-## Document Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/documents/me | Yes | List my documents (paginated) |
-| POST | /api/v1/documents | Yes | Create document |
-| PATCH | /api/v1/documents/:id | Yes | Update document |
-| PATCH | /api/v1/documents/:id/publish | Yes | Publish document (requires category) |
-| DELETE | /api/v1/documents/:id | Yes | Soft delete document |
-
-Note: Create and update accept `categoryId` and `tags[]`. Feed supports `?category=slug&tag=slug` filters.
-
-## Document Style Template Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/document-style-templates | Yes | List my templates |
-| POST | /api/v1/document-style-templates | Yes | Create template |
-| DELETE | /api/v1/document-style-templates/:id | Yes | Delete template |
-
-## Tutorial Exercises Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/documents/:id/exercises | Yes | List exercises for a document |
-| POST | /api/v1/documents/:id/exercises | Yes | Create exercise (document owner only) |
-| PATCH | /api/v1/exercises/:id | Yes | Update exercise (document owner only) |
-| DELETE | /api/v1/exercises/:id | Yes | Delete exercise (document owner only) |
-| POST | /api/v1/exercises/:id/submit | Yes | Submit answer to exercise |
-
-### Exercise Data JSONB Shape
-
-**code:**
-```json
-{
-  "prompt": "string",
-  "language": "string",
-  "initialCode": "string",
-  "expectedOutput": "string"
-}
-```
-
-**quiz:**
-```json
-{
-  "question": "string",
-  "options": ["string"],
-  "correctIndex": 0
-}
-```
-
-### Submission Attempt Shape
-```json
-{
-  "isCorrect": true,
-  "submittedAt": "ISO timestamp",
-  "codeSubmitted": "string | null"
-}
-```
-
-## Likes Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | /api/v1/documents/:id/like | Yes | Toggle like on a document |
-| GET | /api/v1/documents/:id/likes | No | Get likes count (includes liked_by_me if auth) |
-
-## Bookmarks Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | /api/v1/documents/:id/bookmark | Yes | Toggle bookmark on a document |
-| GET | /api/v1/bookmarks/me | Yes | List my bookmarks (paginated) |
-
-## Categories Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/categories | No | Get all categories (hierarchical tree) |
-| GET | /api/v1/categories/:slug | No | Get a category by slug |
-| POST | /api/v1/categories | Admin | Create a category |
-| PATCH | /api/v1/categories/:id | Admin | Update a category |
-| DELETE | /api/v1/categories/:id | Admin | Delete a category |
-
-## Tags Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/tags/popular | No | Get popular tags (sorted by document count) |
-
-## Books Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/books | Yes | Public book feed (cursor pagination) |
-| GET | /api/v1/books/me | Yes | Get my books |
-| GET | /api/v1/books/:username/:slug | Yes | Get a full book with chapters and progress |
-| POST | /api/v1/books | Yes | Create a book |
-| PATCH | /api/v1/books/:id | Yes | Update a book |
-| PATCH | /api/v1/books/:id/publish | Yes | Publish a book |
-| DELETE | /api/v1/books/:id | Yes | Soft delete a book |
-| POST | /api/v1/books/:id/chapters | Yes | Add a chapter (draft only) |
-| PATCH | /api/v1/books/:id/chapters/:chapterId | Yes | Update a chapter |
-| DELETE | /api/v1/books/:id/chapters/:chapterId | Yes | Remove a chapter (draft only) |
-| PATCH | /api/v1/books/:id/chapters/reorder | Yes | Reorder chapters |
-| PATCH | /api/v1/books/:id/toc | Yes | Update table of contents |
-| PATCH | /api/v1/books/:id/progress/:chapterId | Yes | Update reading progress |
-
-## Highlights Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | /api/v1/documents/:id/highlights | Yes | Create a highlight |
-| GET | /api/v1/highlights/me | Yes | Get my highlights grouped by document |
-| GET | /api/v1/documents/:id/highlights/me | Yes | Get highlights on a document (reading order) |
-| PATCH | /api/v1/highlights/:id | Yes | Update a highlight |
-| DELETE | /api/v1/highlights/:id | Yes | Delete a highlight |
-| GET | /api/v1/highlights/palette | Yes | Get my highlight palette |
-| PATCH | /api/v1/highlights/palette | Yes | Update my highlight palette |
-
-## Workspace Routes
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/workspace/me | Yes | Get my workspace with counts |
-| PATCH | /api/v1/workspace/me/color-labels | Yes | Update color labels |
+| Method | Endpoint                    | Auth | Description                                    |
+| ------ | --------------------------- | ---- | ---------------------------------------------- |
+| GET    | /api/v1/canvas/me           | Yes  | Get user's canvas with all notes and positions |
+| PATCH  | /api/v1/canvas/me/positions | Yes  | Batch update note positions on canvas          |
 
 ## Notes Routes
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | /api/v1/notes | Yes | Create a note |
-| GET | /api/v1/notes | Yes | List my notes (paginated, filterable) |
-| GET | /api/v1/notes/:id | Yes | Get a note by ID |
-| PATCH | /api/v1/notes/:id | Yes | Update a note |
-| DELETE | /api/v1/notes/:id | Yes | Soft delete a note |
+| Method | Endpoint          | Auth | Description                                |
+| ------ | ----------------- | ---- | ------------------------------------------ |
+| POST   | /api/v1/notes     | Yes  | Create note → triggers memory indexing job |
+| GET    | /api/v1/notes     | Yes  | List notes (paginated, filterable)         |
+| GET    | /api/v1/notes/:id | Yes  | Get note by ID                             |
+| PATCH  | /api/v1/notes/:id | Yes  | Update note → re-indexes embedding         |
+| DELETE | /api/v1/notes/:id | Yes  | Soft delete → removes position + embedding |
 
-## Journals Routes
+## Memory Routes
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | /api/v1/journals | Yes | Create a journal (max 2) |
-| GET | /api/v1/journals | Yes | List my journals |
-| GET | /api/v1/journals/:id | Yes | Get a journal with highlights |
-| PATCH | /api/v1/journals/:id | Yes | Update a journal |
-| DELETE | /api/v1/journals/:id | Yes | Soft delete a journal |
-| POST | /api/v1/journals/:id/highlights | Yes | Add highlight to journal |
-| DELETE | /api/v1/journals/:id/highlights/:highlightId | Yes | Remove highlight from journal |
-| PATCH | /api/v1/journals/:id/highlights/reorder | Yes | Reorder highlights |
+| Method | Endpoint                                     | Auth | Description                                |
+| ------ | -------------------------------------------- | ---- | ------------------------------------------ |
+| GET    | /api/v1/memory/search                        | Yes  | Semantic search: ?q=string&limit=10        |
+| GET    | /api/v1/memory/related/:sourceType/:sourceId | Yes  | Related items for a specific content piece |
+| GET    | /api/v1/memory/digest                        | Yes  | Weekly connections digest                  |
 
-## Follows Routes
+## Workspace Routes
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| GET | /api/v1/profiles/:username/followers | Optional | Get followers list |
-| GET | /api/v1/profiles/:username/following | Optional | Get following list |
-| POST | /api/v1/profiles/:username/follow | Yes | Follow a profile |
-| DELETE | /api/v1/profiles/:username/follow | Yes | Unfollow a profile |
-| GET | /api/v1/feed/following | Yes | Get following feed |
-| GET | /api/v1/follows/requests | Yes | Get pending requests |
-| POST | /api/v1/follows/requests/:id/accept | Yes | Accept follow request |
-| DELETE | /api/v1/follows/requests/:id/reject | Yes | Reject follow request |
+| Method | Endpoint                          | Auth | Description               |
+| ------ | --------------------------------- | ---- | ------------------------- |
+| GET    | /api/v1/workspace/me              | Yes  | Get workspace with counts |
+| PATCH  | /api/v1/workspace/me/color-labels | Yes  | Update color labels       |
 
-## Authorship JSONB Shape
+## Public Routes (No Auth Required)
 
-Set on publish, null while draft:
-```json
-{
-  "authorName": "string",
-  "username": "string",
-  "userHash": "string",
-  "documentHash": "string",
-  "publicIdentifier": "PLT-xxxxxxxx.xxxxxxxx",
-  "hmac": "string",
-  "signedAt": "ISO timestamp"
-}
-```
+| Method | Endpoint                             | Description                              |
+| ------ | ------------------------------------ | ---------------------------------------- |
+| GET    | /api/v1/documents                    | Public document feed (cursor pagination) |
+| GET    | /api/v1/documents/:username/:slug    | Full public document                     |
+| GET    | /api/v1/profiles/:username           | Get public profile                       |
+| GET    | /api/v1/profiles/:username/documents | Author's published documents             |
+| GET    | /api/v1/categories                   | Get all categories (hierarchical)        |
+| GET    | /api/v1/categories/:slug             | Get a category by slug                   |
+| GET    | /api/v1/tags/popular                 | Get popular tags sorted by usage         |
+| GET    | /api/v1/platform-apps                | List all available apps                  |
 
-## OAuth
+## Document Routes
 
-- **Providers:** GitHub and Google via `@fastify/oauth2`
-- **New OAuth users:** created with `onboardingComplete=false`, redirected to frontend onboarding to choose username
-- **Existing OAuth accounts:** checked by provider ID first, then by email (ConflictError if email exists)
-- **Account linking:** authenticated users can link GitHub/Google via state param carrying userId
-- **Onboarding POST:** creates profiles, signatures, and workspace in same transaction
-- **Unlinking:** blocked if user has only one login method remaining
-- **GitHub email:** fetched from `/user/emails` endpoint if not in primary profile
-- **Temporary JWT:** short-lived token issued to new OAuth users for frontend onboarding flow
-
-## Seed
-
-- **Seed is idempotent** — safe to run multiple times
-- **All seed inserts use ON CONFLICT DO NOTHING**
-- **All category names, slugs, and tags are in English**
-- **i18n for category names is handled by the frontend**
-- **Tags are normalized (trim + lowercase) before insert**
-- **Categories are the source of truth for content classification**
-
-## Email System
-
-- **Emails always go through the queue** — never sent directly
-- **Queue processor runs every 10 minutes via setInterval**
-- **Daily limit: 50 emails** (EMAIL_DAILY_LIMIT env var)
-- **Sender: onboarding@resend.dev** (swap EMAIL_FROM for custom domain)
-- **Failed emails retry up to 3 times then marked as 'failed'**
-- **sendPasswordResetEmail never reveals if email exists**
-- **Password reset invalidates all active sessions**
-- **OAuth-only accounts cannot reset password**
-- **Welcome email sent after email verification** (not after register)
-- **email_verifications uses upsert** — one token per user at a time
-- **React Email templates compiled to HTML at module load**
-- **startEmailQueue() called once after server starts**
-
-## Feature Flags
-
-- **Feature flags centralized in src/config/features.ts**
-- **Always import features from features.ts — never read FEATURE_* env vars directly in other files**
-- **requireFeature() throws 503 — use in route handlers only**
-- **Service-level checks use if (!features.x) return — silent skip**
-- **Route-level checks use requireFeature() — returns 503**
-- **Default state: email=false, oauth=false, emailQueue=false, codeSandbox=true**
-- **Enabling oauth requires all 4 OAuth env vars to be set**
-- **Enabling email requires RESEND_API_KEY and EMAIL_FROM**
-- **emailQueue only works if email is also enabled**
-
-## API Types
-
-- **types/api.types.ts is self-contained** — safe to copy to any frontend
-- **Request types derived from Zod schemas** — keep in sync on schema changes
-- **Response types derived from service return shapes**
-
-## Form Schemas
-
-- **types/form.schemas.ts derives rules from backend Zod schemas** — never assume or invent
-- **Error messages use neutral i18n keys** — never hardcoded strings
-- **confirmPassword fields exist only in form schemas** — stripped before API call
-- **NOTE_COLORS duplicated in form.schemas.ts** — avoids runtime dependency on backend config
-- **When backend Zod schemas change, form.schemas.ts must be updated to match**
-
-## Testing
-
-- **Tests live in tests/ — mirrors src/ structure**
-- **Utils tests are pure** — no mocks needed
-- **Service tests mock the DB layer** — using vi.mock()
-- **Tests are organized by roadmap phase**
-- **Run npm test before each phase release**
-- **docs/ROADMAP.md defines release gates per phase**
+| Method | Endpoint                      | Auth | Description                   |
+| ------ | ----------------------------- | ---- | ----------------------------- |
+| GET    | /api/v1/documents/me          | Yes  | List my documents (paginated) |
+| POST   | /api/v1/documents             | Yes  | Create document               |
+| PATCH  | /api/v1/documents/:id         | Yes  | Update document               |
+| PATCH  | /api/v1/documents/:id/publish | Yes  | Publish document              |
+| DELETE | /api/v1/documents/:id         | Yes  | Soft delete document          |
 
 ## Security
 
 - Security findings documented in `docs/SECURITY.md`
 - Detailed remediation steps in `docs/SECURITY_REMEDIATION.md`
 - Session planning in `docs/SECURITY_SESSIONS.md`
-- Fix priorities aligned with ROADMAP.md phases:
-  - Pre-MVP: Fix all CRITICAL and HIGH findings
-  - MVP: Fix all MEDIUM findings
-  - Beta: Fix all LOW findings
-- Review SECURITY.md before each phase release
-- Never merge a phase release without clearing its security gates in SECURITY_REMEDIATION.md
-- Mark each finding as FIXED with commit reference when resolved
+- Fix priorities aligned with ROADMAP.md phases
+- Never merge a phase release without clearing its security gates
 
 ## Next Steps
 
-- Pre-MVP checklist complete → ready for MVP launch
+- Sessions 27–29: canvas, platform apps/onboarding, semantic memory
 - Comments (future)
 - Sharevault (future)
 - Contract signatures integration
 - Blockchain migration (populate tx_hash from Solana/Base)
+- Memory map — visual cluster view (post v1.0)
+- Team workspaces (workspace_members routes)
