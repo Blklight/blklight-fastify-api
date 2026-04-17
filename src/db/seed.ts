@@ -1,6 +1,7 @@
 import { db } from './index';
 import { categories } from '../features/categories/categories.schema';
 import { tags as tagsTable } from '../features/tags/tags.schema';
+import { platformApps } from '../features/platform-apps/platform-apps.schema';
 import { createId } from '@paralleldrive/cuid2';
 import { env } from '../config/env';
 import { eq } from 'drizzle-orm';
@@ -725,6 +726,30 @@ async function seedTags() {
   console.log(`Seeded ${tagData.length} tags`);
 }
 
+const platformAppsData = [
+  { slug: 'canvas', name: 'Canvas', description: 'Post-it canvas for capturing and connecting ideas' },
+  { slug: 'publisher', name: 'Publisher', description: 'Write and publish articles, tutorials, and books' },
+  { slug: 'reader', name: 'Reader', description: 'Highlight, annotate, and organize what you read' },
+  { slug: 'dev-tools', name: 'Dev Tools', description: 'Code notes, sandboxed exercises, and technical tutorials' },
+];
+
+async function seedPlatformApps() {
+  console.log('Seeding platform apps...');
+
+  for (const app of platformAppsData) {
+    await db.insert(platformApps).values({
+      id: createId(),
+      slug: app.slug,
+      name: app.name,
+      description: app.description,
+      isActive: true,
+      createdAt: new Date(),
+    }).onConflictDoNothing({ target: platformApps.slug });
+  }
+
+  console.log(`Seeded ${platformAppsData.length} platform apps`);
+}
+
 async function main() {
   try {
     console.log('Starting seed...');
@@ -732,6 +757,7 @@ async function main() {
 
     await seedCategories();
     await seedTags();
+    await seedPlatformApps();
 
     console.log('Done!');
     process.exit(0);

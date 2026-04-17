@@ -26,6 +26,9 @@ import noteRoutes from './features/notes/notes.routes';
 import journalRoutes from './features/journals/journals.routes';
 import followRoutes from './features/follows/follows.routes';
 import oauthRoutes from './features/auth/oauth.routes';
+import platformAppsRoutes from './features/platform-apps/platform-apps.routes';
+import canvasRoutes from './features/canvas/canvas.routes';
+import memoryRoutes from './features/memory/memory.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -175,6 +178,9 @@ export async function buildApp() {
   await app.register(noteRoutes, { prefix: '/api/v1/notes' });
   await app.register(journalRoutes, { prefix: '/api/v1/journals' });
   await app.register(followRoutes, { prefix: '/api/v1' });
+  await app.register(platformAppsRoutes, { prefix: '/api/v1' });
+  await app.register(canvasRoutes, { prefix: '/api/v1' });
+  await app.register(memoryRoutes, { prefix: '/api/v1' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({

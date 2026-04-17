@@ -1,9 +1,9 @@
 import { pgTable, text, timestamp } from 'drizzle-orm/pg-core';
-import { workspaces } from '../workspace/workspace.schema';
+import { canvas } from '../canvas/canvas.schema';
 
 export const notes = pgTable('notes', {
   id: text('id').primaryKey(),
-  workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
+  canvasId: text('canvas_id').notNull().references(() => canvas.id),
   title: text('title'),
   content: text('content').notNull(),
   type: text('type').default('text').notNull(),

@@ -6,6 +6,7 @@ export const features = {
   oauth: env.FEATURE_OAUTH,
   emailQueue: env.FEATURE_EMAIL_QUEUE,
   codeSandbox: env.FEATURE_CODE_SANDBOX,
+  memory: env.FEATURE_MEMORY && !!env.GEMINI_API_KEY,
 } as const;
 
 export type FeatureName = keyof typeof features;

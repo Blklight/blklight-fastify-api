@@ -4,6 +4,7 @@ import { users } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { signatures } from '../signatures/signatures.schema';
 import { workspaces } from '../workspace/workspace.schema';
+import { canvas } from '../canvas/canvas.schema';
 import { createId } from '@paralleldrive/cuid2';
 import { generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
@@ -297,6 +298,13 @@ export async function completeOnboarding(
       type: 'personal',
       name: 'My Workspace',
       isPersonal: true,
+    });
+
+    await tx.insert(canvas).values({
+      id: createId(),
+      workspaceId: userId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
   });
 

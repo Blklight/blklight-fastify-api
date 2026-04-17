@@ -51,6 +51,8 @@ const envSchema = z
     FEATURE_OAUTH: booleanFromEnvDefault(false),
     FEATURE_EMAIL_QUEUE: booleanFromEnvDefault(false),
     FEATURE_CODE_SANDBOX: booleanFromEnvDefault(true),
+    FEATURE_MEMORY: booleanFromEnvDefault(true),
+    GEMINI_API_KEY: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.FEATURE_OAUTH) {

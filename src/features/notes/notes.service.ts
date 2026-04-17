@@ -2,7 +2,7 @@ import { eq, and, isNull, desc, lt, sql } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { notes, Note } from './notes.schema';
-import { resolveWorkspaceId } from '../workspace/workspace.service';
+import { resolveCanvasId } from '../canvas/canvas.service';
 import { NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import type { CreateNoteInput, UpdateNoteInput } from './notes.zod';
@@ -27,14 +27,14 @@ export interface NoteResult {
  * @returns Created note
  */
 export async function createNote(userId: string, data: CreateNoteInput): Promise<Note> {
-  const workspaceId = await resolveWorkspaceId(userId);
+  const canvasId = await resolveCanvasId(userId);
   const now = new Date();
 
   const [note] = await db
     .insert(notes)
     .values({
       id: createId(),
-      workspaceId,
+      canvasId,
       title: data.title ?? null,
       content: data.content,
       type: data.type ?? 'text',
@@ -56,12 +56,12 @@ export async function createNote(userId: string, data: CreateNoteInput): Promise
  * @returns Updated note
  */
 export async function updateNote(userId: string, id: string, data: UpdateNoteInput): Promise<Note> {
-  const workspaceId = await resolveWorkspaceId(userId);
+  const canvasId = await resolveCanvasId(userId);
 
   const [existing] = await db
     .select()
     .from(notes)
-    .where(and(eq(notes.id, id), eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt)))
+    .where(and(eq(notes.id, id), eq(notes.canvasId, canvasId), isNull(notes.deletedAt)))
     .limit(1);
 
   if (!existing) {
@@ -95,12 +95,12 @@ export async function updateNote(userId: string, id: string, data: UpdateNoteInp
  * @param id - Note ID
  */
 export async function deleteNote(userId: string, id: string): Promise<void> {
-  const workspaceId = await resolveWorkspaceId(userId);
+  const canvasId = await resolveCanvasId(userId);
 
   const [existing] = await db
     .select()
     .from(notes)
-    .where(and(eq(notes.id, id), eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt)))
+    .where(and(eq(notes.id, id), eq(notes.canvasId, canvasId), isNull(notes.deletedAt)))
     .limit(1);
 
   if (!existing) {
@@ -120,11 +120,11 @@ export async function deleteNote(userId: string, id: string): Promise<void> {
  * @returns Paginated notes
  */
 export async function getMyNotes(userId: string, params: NoteParams): Promise<NoteResult> {
-  const workspaceId = await resolveWorkspaceId(userId);
+  const canvasId = await resolveCanvasId(userId);
   const limit = Math.min(params.limit ?? 20, 50);
   const conditions: ReturnType<typeof eq>[] = [];
 
-  conditions.push(eq(notes.workspaceId, workspaceId));
+  conditions.push(eq(notes.canvasId, canvasId));
   conditions.push(isNull(notes.deletedAt));
 
   if (params.type) {
@@ -165,7 +165,7 @@ export async function getMyNotes(userId: string, params: NoteParams): Promise<No
     ? encodeCursor(lastResult.updatedAt, lastResult.id)
     : null;
 
-  const countConditions = [eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt)];
+  const countConditions = [eq(notes.canvasId, canvasId), isNull(notes.deletedAt)];
   if (params.type) countConditions.push(eq(notes.type, params.type));
   if (params.color) countConditions.push(eq(notes.color, params.color));
 
@@ -186,12 +186,12 @@ export async function getMyNotes(userId: string, params: NoteParams): Promise<No
  * @returns Note
  */
 export async function getNoteById(userId: string, id: string): Promise<Note> {
-  const workspaceId = await resolveWorkspaceId(userId);
+  const canvasId = await resolveCanvasId(userId);
 
   const [note] = await db
     .select()
     .from(notes)
-    .where(and(eq(notes.id, id), eq(notes.workspaceId, workspaceId), isNull(notes.deletedAt)))
+    .where(and(eq(notes.id, id), eq(notes.canvasId, canvasId), isNull(notes.deletedAt)))
     .limit(1);
 
   if (!note) {

@@ -5,6 +5,7 @@ import { users, sessions, NewUser, NewSession, User } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { signatures } from '../signatures/signatures.schema';
 import { workspaces } from '../workspace/workspace.schema';
+import { canvas } from '../canvas/canvas.schema';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError } from '../../utils/errors';
 import { env } from '../../config/env';
@@ -183,6 +184,13 @@ export async function createUser(
       name: `${username}'s workspace`,
       isPersonal: true,
       colorLabels: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await tx.insert(canvas).values({
+      id: createId(),
+      workspaceId: userId,
       createdAt: now,
       updatedAt: now,
     });
