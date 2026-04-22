@@ -3,6 +3,8 @@ import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { notes, Note } from './notes.schema';
 import { resolveCanvasId } from '../canvas/canvas.service';
+import { canvasPositions } from '../canvas/canvas.schema';
+import { indexSource, removeSource } from '../memory/memory.job';
 import { NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import type { CreateNoteInput, UpdateNoteInput } from './notes.zod';
@@ -45,6 +47,11 @@ export async function createNote(userId: string, data: CreateNoteInput): Promise
     })
     .returning();
 
+  if (note) {
+    const text = [note.title, note.content].filter(Boolean).join(' ');
+    void indexSource('note', note.id, userId, text);
+  }
+
   return note!;
 }
 
@@ -86,6 +93,11 @@ export async function updateNote(userId: string, id: string, data: UpdateNoteInp
     .where(eq(notes.id, id))
     .limit(1);
 
+  if (updated) {
+    const text = [updated.title, updated.content].filter(Boolean).join(' ');
+    void indexSource('note', updated.id, userId, text);
+  }
+
   return updated!;
 }
 
@@ -107,10 +119,18 @@ export async function deleteNote(userId: string, id: string): Promise<void> {
     throw new NotFoundError('Note not found');
   }
 
-  await db
-    .update(notes)
-    .set({ deletedAt: new Date() })
-    .where(eq(notes.id, id));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(notes)
+      .set({ deletedAt: new Date() })
+      .where(eq(notes.id, id));
+
+    await tx
+      .delete(canvasPositions)
+      .where(eq(canvasPositions.noteId, id));
+  });
+
+  void removeSource('note', id, userId);
 }
 
 /**

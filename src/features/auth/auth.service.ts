@@ -188,9 +188,15 @@ export async function createUser(
       updatedAt: now,
     });
 
+    const [newWorkspace] = await tx
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.ownerId, userId))
+      .limit(1);
+
     await tx.insert(canvas).values({
       id: createId(),
-      workspaceId: userId,
+      workspaceId: newWorkspace!.id,
       createdAt: now,
       updatedAt: now,
     });

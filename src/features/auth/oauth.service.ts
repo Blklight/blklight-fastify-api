@@ -292,7 +292,7 @@ export async function completeOnboarding(
       secretEncrypted: encryptedSecret,
     });
 
-    await tx.insert(workspaces).values({
+await tx.insert(workspaces).values({
       id: createId(),
       ownerId: userId,
       type: 'personal',
@@ -300,9 +300,19 @@ export async function completeOnboarding(
       isPersonal: true,
     });
 
+    const newWorkspace = await tx
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.ownerId, userId))
+      .limit(1);
+
+    if (!newWorkspace[0]) {
+      throw new Error('Failed to create workspace');
+    }
+
     await tx.insert(canvas).values({
       id: createId(),
-      workspaceId: userId,
+      workspaceId: newWorkspace[0].id,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
