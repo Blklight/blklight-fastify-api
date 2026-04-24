@@ -7,6 +7,7 @@ import { workspaces } from '../workspace/workspace.schema';
 import { canvas } from '../canvas/canvas.schema';
 import { createId } from '@paralleldrive/cuid2';
 import { generateUserHash, encryptSecret } from '../../utils/crypto';
+import { buildAuthSession } from './auth.service';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
 import { env } from '../../config/env';
 import { sendVerificationEmail } from '../email/email.service';

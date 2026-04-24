@@ -24,5 +24,34 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+export const authSessionUserSchema = z.object({
+  id: z.string(),
+  email: z.string(),
+  username: z.string(),
+  role: z.enum(['user', 'admin']),
+  emailVerified: z.boolean(),
+  onboardingComplete: z.boolean(),
+  createdAt: z.string(),
+});
+
+export const authSessionProfileSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  username: z.string(),
+  displayName: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+  isPrivate: z.boolean(),
+});
+
+export const authSessionSchema = z.object({
+  accessToken: z.string(),
+  user: authSessionUserSchema,
+  profile: authSessionProfileSchema,
+  apps: z.array(z.string()),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type AuthSession = z.infer<typeof authSessionSchema>;
+export type AuthSessionUser = z.infer<typeof authSessionUserSchema>;
+export type AuthSessionProfile = z.infer<typeof authSessionProfileSchema>;

@@ -1,7 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { db } from '../../db/index';
 import { registerSchema, loginSchema } from './auth.zod';
-import { registerUser, loginUser, refreshSession, logout } from './auth.service';
+import { registerUser, loginUser, refreshSession, logout, buildAuthSession, getOnboardingStep } from './auth.service';
+import { users } from './auth.schema';
 import { verifyEmail, sendVerificationEmail, sendPasswordResetEmail, resetPassword } from '../email/email.service';
 import { requireFeature } from '../../config/features';
 import { env } from '../../config/env';
@@ -81,9 +84,11 @@ export default async function authRoutes(app: FastifyInstance) {
       { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
     );
 
+    const authSession = await buildAuthSession(user.id, accessToken);
+
     const maxAge = parseRefreshMaxAge(env.JWT_REFRESH_EXPIRES_IN);
     reply.code(201).setCookie('refreshToken', refreshToken, buildCookieOptions(maxAge)).send({
-      data: { user, accessToken },
+      data: authSession,
       error: null,
       message: 'User registered successfully',
     });
@@ -141,16 +146,18 @@ export default async function authRoutes(app: FastifyInstance) {
     }
 
     const { identifier, password } = parsed.data;
-    const { user, refreshToken } = await loginUser(identifier, password);
+    const { userId, refreshToken } = await loginUser(identifier, password);
 
     const accessToken = app.jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
+      { userId, email: '', role: 'user' },
       { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
     );
 
+    const authSession = await buildAuthSession(userId, accessToken);
+
     const maxAge = parseRefreshMaxAge(env.JWT_REFRESH_EXPIRES_IN);
     reply.setCookie('refreshToken', refreshToken, buildCookieOptions(maxAge)).send({
-      data: { user, accessToken },
+      data: authSession,
       error: null,
       message: 'Login successful',
     });
@@ -192,8 +199,10 @@ export default async function authRoutes(app: FastifyInstance) {
       { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
     );
 
+    const authSession = await buildAuthSession(user.id, accessToken);
+
     reply.send({
-      data: { accessToken },
+      data: authSession,
       error: null,
       message: 'Token refreshed',
     });
@@ -224,6 +233,61 @@ export default async function authRoutes(app: FastifyInstance) {
       data: null,
       error: null,
       message: 'Logged out successfully',
+    });
+  });
+
+  app.get('/onboarding/status', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
+    schema: {
+      summary: 'Get onboarding status',
+      tags: ['auth'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'object',
+              properties: {
+                step: { type: 'string' },
+                user: { type: 'object' },
+                profile: { type: 'object' },
+                apps: { type: 'array' },
+              },
+            },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId = request.user.userId;
+
+    const [userRow] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    if (!userRow) {
+      return reply.code(404).send({
+        data: null,
+        error: { code: 'NOT_FOUND', message: 'User not found' },
+        message: 'User not found',
+      });
+    }
+
+    const dummyToken = '';
+    const authSession = await buildAuthSession(userId, dummyToken);
+    const step = getOnboardingStep({
+      username: userRow.username,
+      onboardingComplete: userRow.onboardingComplete,
+    });
+
+    reply.send({
+      data: { step, ...authSession },
+      error: null,
+      message: 'Onboarding status retrieved',
     });
   });
 

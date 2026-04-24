@@ -4,8 +4,8 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 26 complete — form schemas generated.
-Sessions 27–29 planned: canvas + post-its, platform apps/onboarding, semantic memory.
+Session 29 complete — MVP closed.
+Future: comments (post-MVP).
 
 ## Tech Stack
 
@@ -792,6 +792,17 @@ API docs at http://localhost:3000/docs
 - **source_type + source_id is the universal pointer** — no FK constraint, resolved at query time
 - **Memory digest sent via existing email queue** — same pattern as other transactional emails
 - **GEMINI_API_KEY added to env.ts** — required when FEATURE_MEMORY=true
+- **buildAuthSession() is the single source of truth** for auth response shape — all auth flows call it
+- **AuthSession is the unified response shape** for login, register, refresh, OAuth callbacks, and onboarding status
+- **apps field in AuthSession contains activated app slugs** — frontend uses this to gate UI sections
+- **apps is always an array** — never null, empty array when no apps activated
+- **loginUser() returns only { userId, refreshToken }** — not the raw DB user object
+- **Raw DB objects from db.select() are never passed to responses** — always mapped field by field
+- **onboarding_complete = false is not a login blocker** — frontend handles redirect via AuthSession
+- **GET /api/v1/auth/onboarding/status is read-only** — determines frontend routing step
+- **Onboarding step 'username' only applies to OAuth users** pre-username selection
+- **Email-registered users go directly to 'apps' step** — never 'username'
+- **Explicit Drizzle column selection** used in all queries on sensitive tables — never select() with no args
 
 ## Onboarding Flow
 
@@ -973,10 +984,36 @@ Apps available at launch (seeded in `db/seed.ts`):
 
 ## Next Steps
 
-- Sessions 27–29: canvas, platform apps/onboarding, semantic memory
-- Comments (future)
-- Sharevault (future)
-- Contract signatures integration
-- Blockchain migration (populate tx_hash from Solana/Base)
-- Memory map — visual cluster view (post v1.0)
-- Team workspaces (workspace_members routes)
+MVP is complete. The following features are implemented and tested:
+- Auth (email + OAuth), onboarding, platform apps
+- Canvas with post-its (notes) and spatial positioning
+- Semantic memory (pgvector + Gemini embeddings)
+- Workspace with color labels
+- Signatures (cryptographic authorship)
+- Public profile routes
+- Categories and tags (read-only)
+
+Beta phase (next):
+- Documents (CRUD + publish)
+- Tutorial exercises with sandbox
+- Likes and bookmarks
+- Highlights and journals
+- Document style templates
+- Account management (linking, deletion)
+- Memory full coverage (all source types)
+
+Post-Beta (v1.0):
+- Books and chapters
+- Follows and social feed
+- Memory full coverage (all source types)
+
+Future:
+- Memory map (visual cluster view)
+- Comments on documents
+- Sharevault
+- Team workspaces
+- Blockchain migration for signatures
+- Notifications
+- Analytics
+- RSS feeds
+- Monetization and plans

@@ -6,24 +6,14 @@ import { profiles } from '../profiles/profiles.schema';
 import { signatures } from '../signatures/signatures.schema';
 import { workspaces } from '../workspace/workspace.schema';
 import { canvas } from '../canvas/canvas.schema';
+import { getUserApps } from '../platform-apps/platform-apps.service';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
-import { ConflictError, UnauthorizedError } from '../../utils/errors';
+import { ConflictError, UnauthorizedError, NotFoundError } from '../../utils/errors';
 import { env } from '../../config/env';
 import { sendVerificationEmail } from '../email/email.service';
 import { features } from '../../config/features';
 import type { FastifyReply } from 'fastify';
-
-function parseExpiration(expiresIn: string): Date {
-  const match = expiresIn.match(/^(\d+)([smhd])$/);
-  if (!match || !match[1] || !match[2]) {
-    return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  }
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  const msMap: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
-  const ms = msMap[unit] ?? 86400000;
-  return new Date(Date.now() + value * ms);
-}
+import type { AuthSession } from './auth.zod';
 
 export interface RegisterUserResult {
   user: User;
@@ -35,8 +25,81 @@ export interface CreateUserResult {
 }
 
 export interface LoginUserResult {
-  user: User;
+  userId: string;
   refreshToken: string;
+}
+
+export async function buildAuthSession(
+  userId: string,
+  accessToken: string
+): Promise<AuthSession> {
+  const [userRow, profileRow, userApps] = await Promise.all([
+    db.select().from(users).where(eq(users.id, userId)).limit(1),
+    db
+      .select({
+        id: profiles.id,
+        userId: profiles.userId,
+        username: profiles.username,
+        displayName: profiles.displayName,
+        avatarUrl: profiles.avatarUrl,
+        isPrivate: profiles.isPrivate,
+      })
+      .from(profiles)
+      .where(eq(profiles.userId, userId))
+      .limit(1),
+    getUserApps(userId),
+  ]);
+
+  const user = userRow[0];
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  const profile = profileRow[0];
+
+  return {
+    accessToken,
+    user: {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role as 'user' | 'admin',
+      emailVerified: user.emailVerified,
+      onboardingComplete: user.onboardingComplete,
+      createdAt: user.createdAt.toISOString(),
+    },
+    profile: {
+      id: profile?.id ?? '',
+      userId: profile?.userId ?? '',
+      username: profile?.username ?? '',
+      displayName: profile?.displayName ?? null,
+      avatarUrl: profile?.avatarUrl ?? null,
+      isPrivate: profile?.isPrivate ?? false,
+    },
+    apps: userApps.map(a => a.slug),
+  };
+}
+
+export function getOnboardingStep(user: { username: string | null; onboardingComplete: boolean }): 'username' | 'apps' | 'complete' {
+  if (user.onboardingComplete) {
+    return 'complete';
+  }
+  if (!user.username) {
+    return 'username';
+  }
+  return 'apps';
+}
+
+function parseExpiration(expiresIn: string): Date {
+  const match = expiresIn.match(/^(\d+)([smhd])$/);
+  if (!match || !match[1] || !match[2]) {
+    return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  }
+  const value = parseInt(match[1], 10);
+  const unit = match[2];
+  const msMap: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+  const ms = msMap[unit] ?? 86400000;
+  return new Date(Date.now() + value * ms);
 }
 
 export async function registerUser(
@@ -254,13 +317,9 @@ export async function loginUser(
     throw new UnauthorizedError('Invalid email or password');
   }
 
-  if (!user.onboardingComplete) {
-    throw new UnauthorizedError('Please complete your account setup first.');
-  }
-
   const refreshToken = await createSession(user.id);
 
-  return { user, refreshToken };
+  return { userId: user.id, refreshToken };
 }
 
 export async function refreshSession(refreshToken: string): Promise<User> {
