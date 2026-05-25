@@ -4,7 +4,7 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 29 complete — MVP closed.
+Session 30 complete — rememberMe no login + proteção de rotas admin.
 Future: comments (post-MVP).
 
 ## Tech Stack
@@ -138,6 +138,8 @@ src/
     sandbox.ts      - Code execution sandbox using node:vm
     cursor.ts       - Cursor encoding/decoding for pagination
     toc.ts          - Table of contents extraction from TipTap JSON
+  hooks/
+    admin-guard.ts  - requireAdmin preHandler for admin-only routes
   config/
     env.ts          - Environment variable validation with Zod
     features.ts     - Feature flags configuration
@@ -804,6 +806,26 @@ API docs at http://localhost:3000/docs
 - **Email-registered users go directly to 'apps' step** — never 'username'
 - **Explicit Drizzle column selection** used in all queries on sensitive tables — never select() with no args
 
+## rememberMe
+
+- **rememberMe is optional** — field in login request body, defaults to `false`
+- **rememberMe=false (default)** → refresh token TTL = `JWT_REFRESH_EXPIRES_IN` (7d)
+- **rememberMe=true** → refresh token TTL = `JWT_REFRESH_REMEMBER_TTL` (30d)
+- **Cookie maxAge always matches the chosen TTL** — never diverges
+- **Access token duration is unaffected** — always `JWT_ACCESS_EXPIRES_IN` (15m)
+- **rememberMe not available on register** — register always uses default TTL
+
+## Admin Role
+
+- **pgEnum('user_role', ['user', 'admin'])** — DB-level constraint, replaces loose text column
+- **role included in JWT payload** — `{ sub: userId, email, role }` at issue time
+- **requireAdmin preHandler** — shared Fastify hook at `src/hooks/admin-guard.ts`
+- **requireAdmin always used WITH app.authenticate** — auth check runs first, then role check
+- **ForbiddenError (403)** — custom error class for insufficient permissions
+- **Categories CRUD protected** — POST/PATCH/DELETE require admin
+- **No admin routes exist yet for user management** (list users, change roles, etc.) — future
+- **Categories routes fixed** — previously accessed `request.user.role` without explicit auth, causing crashes on unauthenticated requests
+
 ## Onboarding Flow
 
 ### Email registration
@@ -878,7 +900,7 @@ Apps available at launch (seeded in `db/seed.ts`):
 | Method | Endpoint                         | Description                   | Rate Limit |
 | ------ | -------------------------------- | ----------------------------- | ---------- |
 | POST   | /api/v1/auth/register            | Register new user             | 5/min      |
-| POST   | /api/v1/auth/login               | Login with email or username  | 10/min     |
+| POST   | /api/v1/auth/login               | Login with email or username (optional rememberMe) | 10/min     |
 | POST   | /api/v1/auth/refresh             | Refresh access token          | None       |
 | POST   | /api/v1/auth/logout              | Logout and invalidate session | None       |
 | POST   | /api/v1/auth/verify-email        | Verify email address          | None       |

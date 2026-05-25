@@ -7,7 +7,7 @@ import {
   getAllCategories,
   getCategoryBySlug,
 } from './categories.service';
-import { ValidationError } from '../../utils/errors';
+import { requireAdmin } from '../../hooks/admin-guard';
 
 const createCategorySchema = z.object({
   name: z.string().min(1).max(50),
@@ -97,9 +97,11 @@ export default async function categoryRoutes(app: FastifyInstance) {
   });
 
   app.post('/', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply), requireAdmin],
     schema: {
       summary: 'Create a category (admin only)',
       tags: ['categories'],
+      security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
         required: ['name'],
@@ -129,16 +131,6 @@ export default async function categoryRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { userId, role } = request.user;
-
-    if (role !== 'admin') {
-      return reply.code(403).send({
-        data: null,
-        error: { code: 'FORBIDDEN', message: 'Admin access required' },
-        message: 'Forbidden',
-      });
-    }
-
     const parsed = createCategorySchema.safeParse(request.body);
 
     if (!parsed.success) {
@@ -169,9 +161,11 @@ export default async function categoryRoutes(app: FastifyInstance) {
   });
 
   app.patch('/:id', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply), requireAdmin],
     schema: {
       summary: 'Update a category (admin only)',
       tags: ['categories'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
@@ -206,18 +200,8 @@ export default async function categoryRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    const { role } = request.user;
-
-    if (role !== 'admin') {
-      return reply.code(403).send({
-        data: null,
-        error: { code: 'FORBIDDEN', message: 'Admin access required' },
-        message: 'Forbidden',
-      });
-    }
-
-    const { id } = request.params;
+  }, async (request, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
     const parsed = updateCategorySchema.safeParse(request.body);
 
     if (!parsed.success) {
@@ -244,9 +228,11 @@ export default async function categoryRoutes(app: FastifyInstance) {
   });
 
   app.delete('/:id', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply), requireAdmin],
     schema: {
       summary: 'Delete a category (admin only)',
       tags: ['categories'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
@@ -265,18 +251,8 @@ export default async function categoryRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    const { role } = request.user;
-
-    if (role !== 'admin') {
-      return reply.code(403).send({
-        data: null,
-        error: { code: 'FORBIDDEN', message: 'Admin access required' },
-        message: 'Forbidden',
-      });
-    }
-
-    const { id } = request.params;
+  }, async (request, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
     await deleteCategory(id);
 
     reply.send({

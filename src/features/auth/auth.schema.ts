@@ -1,5 +1,7 @@
-import { pgTable, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, text, boolean, timestamp } from 'drizzle-orm/pg-core';
 import '../signatures/signatures.schema';
+
+export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 
 export const users = pgTable('users', {
   id: text('id').primaryKey(),
@@ -8,7 +10,7 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash'),
   salt: text('salt'),
   emailVerified: boolean('email_verified').default(false).notNull(),
-  role: text('role').default('user').notNull(),
+  role: userRoleEnum('role').default('user').notNull(),
   githubId: text('github_id').unique(),
   googleId: text('google_id').unique(),
   onboardingComplete: boolean('onboarding_complete').default(true).notNull(),

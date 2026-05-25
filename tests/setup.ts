@@ -7,6 +7,7 @@ vi.mock('../src/config/env', () => ({
     JWT_REFRESH_SECRET: 'test-refresh-secret-minimum-32-chars',
     JWT_ACCESS_EXPIRES_IN: '15m',
     JWT_REFRESH_EXPIRES_IN: '7d',
+    JWT_REFRESH_REMEMBER_TTL: '30d',
     PORT: 3000,
     NODE_ENV: 'test',
     LOG_LEVEL: 'error',

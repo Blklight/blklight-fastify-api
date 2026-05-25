@@ -53,3 +53,12 @@ export class ConflictError extends AppError {
     super('CONFLICT', message, 409);
   }
 }
+
+/**
+ * Error for insufficient permissions.
+ */
+export class ForbiddenError extends AppError {
+  constructor(message = 'Access denied') {
+    super('FORBIDDEN', message, 403);
+  }
+}

@@ -27,6 +27,8 @@ export interface CreateUserResult {
 export interface LoginUserResult {
   userId: string;
   refreshToken: string;
+  role: string;
+  email: string;
 }
 
 export async function buildAuthSession(
@@ -112,7 +114,7 @@ export async function registerUser(
   return { user, refreshToken };
 }
 
-async function createSession(userId: string): Promise<string> {
+async function createSession(userId: string, rememberMe?: boolean): Promise<string> {
   const now = new Date();
 
   await db
@@ -139,7 +141,8 @@ async function createSession(userId: string): Promise<string> {
   }
 
   const refreshToken = createId() + createId();
-  const expiresAt = parseExpiration(env.JWT_REFRESH_EXPIRES_IN);
+  const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
+  const expiresAt = parseExpiration(ttl);
 
   const newSession: NewSession = {
     id: createId(),
@@ -154,9 +157,10 @@ async function createSession(userId: string): Promise<string> {
   return refreshToken;
 }
 
-export async function createSessionWithReply(userId: string, reply: FastifyReply): Promise<void> {
-  const refreshToken = await createSession(userId);
-  const maxAge = parseExpiration(env.JWT_REFRESH_EXPIRES_IN);
+export async function createSessionWithReply(userId: string, reply: FastifyReply, rememberMe?: boolean): Promise<void> {
+  const refreshToken = await createSession(userId, rememberMe);
+  const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
+  const maxAge = parseExpiration(ttl);
   const maxAgeMs = maxAge.getTime() - Date.now();
   const maxAgeSeconds = Math.floor(maxAgeMs / 1000);
   
@@ -284,12 +288,14 @@ export async function createUser(
  * Authenticate a user with email or username.
  * @param identifier - Email address or username
  * @param password - Account password
- * @returns User object and refresh token
+ * @param rememberMe - Whether to extend refresh token TTL
+ * @returns User ID, refresh token, role, and email
  * @throws UnauthorizedError if credentials are invalid
  */
 export async function loginUser(
   identifier: string,
-  password: string
+  password: string,
+  rememberMe?: boolean
 ): Promise<LoginUserResult> {
   const isEmail = identifier.includes('@');
   const normalizedIdentifier = isEmail ? identifier.toLowerCase().trim() : identifier.trim();
@@ -317,9 +323,9 @@ export async function loginUser(
     throw new UnauthorizedError('Invalid email or password');
   }
 
-  const refreshToken = await createSession(user.id);
+  const refreshToken = await createSession(user.id, rememberMe);
 
-  return { userId: user.id, refreshToken };
+  return { userId: user.id, refreshToken, role: user.role, email: user.email };
 }
 
 export async function refreshSession(refreshToken: string): Promise<User> {

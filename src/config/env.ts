@@ -26,6 +26,7 @@ const envSchema = z
       .min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
+    JWT_REFRESH_REMEMBER_TTL: z.string().default("30d"),
     PORT: z.coerce.number().int().positive().default(4000),
     NODE_ENV: z
       .enum(["development", "production", "test"])

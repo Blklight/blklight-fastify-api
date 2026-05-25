@@ -110,6 +110,7 @@ export default async function authRoutes(app: FastifyInstance) {
         properties: {
           identifier: { type: 'string', minLength: 1 },
           password: { type: 'string' },
+          rememberMe: { type: 'boolean' },
         },
       },
       response: {
@@ -145,17 +146,18 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const { identifier, password } = parsed.data;
-    const { userId, refreshToken } = await loginUser(identifier, password);
+    const { identifier, password, rememberMe } = parsed.data;
+    const { userId, refreshToken, role, email } = await loginUser(identifier, password, rememberMe);
 
     const accessToken = app.jwt.sign(
-      { userId, email: '', role: 'user' },
+      { userId, email, role },
       { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
     );
 
     const authSession = await buildAuthSession(userId, accessToken);
 
-    const maxAge = parseRefreshMaxAge(env.JWT_REFRESH_EXPIRES_IN);
+    const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
+    const maxAge = parseRefreshMaxAge(ttl);
     reply.setCookie('refreshToken', refreshToken, buildCookieOptions(maxAge)).send({
       data: authSession,
       error: null,

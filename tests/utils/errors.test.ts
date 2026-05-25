@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AppError, ValidationError, NotFoundError, UnauthorizedError, ConflictError } from '../../src/utils/errors';
+import { AppError, ValidationError, NotFoundError, UnauthorizedError, ConflictError, ForbiddenError } from '../../src/utils/errors';
 
 describe('errors', () => {
   describe('AppError', () => {
@@ -40,6 +40,22 @@ describe('errors', () => {
       const error = new ConflictError('Already exists');
       expect(error.statusCode).toBe(409);
       expect(error.code).toBe('CONFLICT');
+    });
+  });
+
+  describe('ForbiddenError', () => {
+    it('ForbiddenError statusCode 403, code FORBIDDEN', () => {
+      const error = new ForbiddenError('Admin access required');
+      expect(error.statusCode).toBe(403);
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toBe('Admin access required');
+    });
+
+    it('ForbiddenError default message', () => {
+      const error = new ForbiddenError();
+      expect(error.statusCode).toBe(403);
+      expect(error.code).toBe('FORBIDDEN');
+      expect(error.message).toBe('Access denied');
     });
   });
 });

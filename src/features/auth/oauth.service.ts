@@ -321,7 +321,7 @@ await tx.insert(workspaces).values({
 
   const app = await getApp();
   const accessToken = await app.jwt.sign(
-    { userId, email: '', role: 'user' },
+    { userId, email: user.email, role: user.role },
     { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
   );
 
