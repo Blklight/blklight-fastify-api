@@ -7,6 +7,8 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 Session 30 complete — rememberMe no login + proteção de rotas admin.
 Future: comments (post-MVP).
 
+> Inventário completo de rotas (admin, auth, pública) em `ADMIN_ROUTES.md` (não commitável).
+
 ## Tech Stack
 
 - **Runtime**: Node.js 20+
@@ -17,6 +19,7 @@ Future: comments (post-MVP).
 - **Password Hashing**: node:crypto (pbkdf2Sync)
 - **IDs**: CUID2
 - **API Docs**: @fastify/swagger + @scalar/fastify-api-reference
+- **Realtime**: @fastify/websocket (chat channel subscriptions)
 - **Email**: Resend with persistent queue + React Email
 - **Embeddings**: Google Gemini text-embedding-004 (via REST, no SDK)
 - **Vector search**: pgvector extension on PostgreSQL
@@ -128,6 +131,13 @@ src/
         password-reset.tsx
         memory-digest.tsx - Weekly semantic connections digest
         index.ts - Exports compiled HTML functions
+    chat/
+      chat.routes.ts - Chat REST routes + WS ticket/endpoint
+      chat.service.ts - Chat business logic + WS broadcasts
+      chat.schema.ts - Drizzle schema: chat_servers, chat_server_members, chat_channels, chat_messages
+      chat.zod.ts
+      ws-tickets.ts - Single-use WS connection tickets (TTL 30s)
+      ws-registry.ts - In-memory channel subscriptions + broadcast
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
@@ -805,6 +815,20 @@ API docs at http://localhost:3000/docs
 - **Onboarding step 'username' only applies to OAuth users** pre-username selection
 - **Email-registered users go directly to 'apps' step** — never 'username'
 - **Explicit Drizzle column selection** used in all queries on sensitive tables — never select() with no args
+
+## Chat Realtime (WebSocket)
+
+- **@fastify/websocket** registered in app.ts before all route plugins — required for `websocket: true` routes
+- **POST /api/v1/chat/ws-ticket** (auth + rate limit 30/min) returns a single-use ticket (TTL 30s)
+- **GET /api/v1/chat/ws?ticket=...&channelId=...** is the WS endpoint — read-only transport
+- **Auth happens via ticket, NOT JWT** — tickets stored in-memory in `ws-tickets.ts`, consumed once
+- **Close codes**: 4400 missing params, 4401 invalid/expired ticket, 4403 not an accepted member
+- **WS registry is in-memory (single instance)** — documented tech debt; future Redis/pub-sub for horizontal scaling
+- **Incoming WS messages are ignored** — all writes go through the REST API (single write path)
+- **Broadcast events**: `message:new`, `message:updated`, `message:deleted` sent to the channel after the DB write succeeds
+- **Broadcast payload shape**: `{ type, channelId, message }` (or `messageId` for delete)
+- **Assertions reuse the REST rules** — `assertCanAccessChannel()` reuses `resolveServerFromChannel` + `assertAcceptedMember`
+- **broadcastToChannel() never throws** — dead sockets skipped, send errors swallowed so REST flow is never broken
 
 ## rememberMe
 

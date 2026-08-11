@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import websocket from '@fastify/websocket';
 import swagger from '@fastify/swagger';
 import scalar from '@scalar/fastify-api-reference';
 import oauth2 from '@fastify/oauth2';
@@ -66,6 +67,10 @@ export async function buildApp() {
   await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
 
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+
+  await app.register(websocket, {
+    options: { maxPayload: 16 * 1024 },
+  });
 
   await app.register(oauth2, {
     name: 'githubOAuth2',

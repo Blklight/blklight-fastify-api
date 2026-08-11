@@ -5,6 +5,7 @@ import { chatServers, chatServerMembers, chatChannels, chatMessages, ChatServer,
 import { profiles } from '../profiles/profiles.schema';
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { broadcastToChannel } from './ws-registry';
 import type { CreateServerInput, CreateChannelInput, MessageQueryInput } from './chat.zod';
 
 const MAX_LIMIT = 50;
@@ -15,7 +16,7 @@ const MAX_LIMIT = 50;
  * @returns Profile ID
  * @throws NotFoundError if profile not found
  */
-async function resolveProfileIdFromUserId(userId: string): Promise<string> {
+export async function resolveProfileIdFromUserId(userId: string): Promise<string> {
   const [profile] = await db
     .select({ id: profiles.id })
     .from(profiles)
@@ -124,6 +125,19 @@ async function resolveServerFromChannel(channelId: string): Promise<{ channel: C
   const server = await assertServerExists(channel.serverId);
 
   return { channel, server };
+}
+
+/**
+ * Ensure a profile is an accepted member of the server that owns a channel.
+ * Used by the WebSocket subscribe handler to reuse the same business rule.
+ * @param profileId - The profile ID
+ * @param channelId - The channel ID
+ * @throws NotFoundError if channel not found
+ * @throws ForbiddenError if not an accepted member of the parent server
+ */
+export async function assertCanAccessChannel(profileId: string, channelId: string): Promise<void> {
+  const { server } = await resolveServerFromChannel(channelId);
+  await assertAcceptedMember(server.id, profileId);
 }
 
 function generateSlug(name: string): string {
@@ -496,6 +510,12 @@ export async function sendMessage(userId: string, channelId: string, content: st
     })
     .returning();
 
+  broadcastToChannel(channelId, {
+    type: 'message:new',
+    channelId,
+    message: message!,
+  });
+
   return message!;
 }
 
@@ -622,6 +642,12 @@ export async function editMessage(userId: string, messageId: string, content: st
     .where(eq(chatMessages.id, messageId))
     .returning();
 
+  broadcastToChannel(message.channelId, {
+    type: 'message:updated',
+    channelId: message.channelId,
+    message: updated!,
+  });
+
   return updated!;
 }
 
@@ -653,4 +679,10 @@ export async function deleteMessage(userId: string, messageId: string): Promise<
     .update(chatMessages)
     .set({ deletedAt: new Date() })
     .where(eq(chatMessages.id, messageId));
+
+  broadcastToChannel(message.channelId, {
+    type: 'message:deleted',
+    channelId: message.channelId,
+    messageId,
+  });
 }

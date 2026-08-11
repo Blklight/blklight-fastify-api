@@ -22,8 +22,12 @@ import {
   listMessages,
   editMessage,
   deleteMessage,
+  assertCanAccessChannel,
 } from './chat.service';
 import { requireAdmin } from '../../hooks/admin-guard';
+import { createWsTicket, consumeWsTicket } from './ws-tickets';
+import { subscribeChannel, unsubscribeChannel, removeConnection } from './ws-registry';
+import type { WebSocket } from 'ws';
 
 interface JwtPayload {
   userId: string;
@@ -629,5 +633,79 @@ export default async function chatRoutes(app: FastifyInstance) {
       error: null,
       message: 'Message deleted',
     });
+  });
+
+  app.post('/chat/ws-ticket', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
+    config: {
+      rateLimit: {
+        max: 30,
+        timeWindow: '1 minute',
+      },
+    },
+    schema: {
+      summary: 'Create a WebSocket connection ticket',
+      tags: ['chat'],
+      security: [{ bearerAuth: [] }],
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'object',
+              properties: {
+                ticket: { type: 'string' },
+                expiresIn: { type: 'number' },
+              },
+            },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const result = await createWsTicket(request.user.userId);
+
+    reply.code(201).send({
+      data: result,
+      error: null,
+      message: 'WebSocket ticket created',
+    });
+  });
+
+  app.get('/chat/ws', {
+    websocket: true,
+  }, (socket: WebSocket, request: FastifyRequest) => {
+    const { ticket, channelId } = request.query as { ticket?: string; channelId?: string };
+
+    if (!ticket || !channelId) {
+      socket.close(4400, 'Missing ticket or channelId');
+      return;
+    }
+
+    const profileId = consumeWsTicket(ticket);
+    if (!profileId) {
+      socket.close(4401, 'Invalid or expired ticket');
+      return;
+    }
+
+    void assertCanAccessChannel(profileId, channelId)
+      .then(() => {
+        subscribeChannel(channelId, { connection: socket, profileId });
+
+        socket.send(JSON.stringify({ type: 'subscribed', channelId }));
+
+        socket.on('message', () => {
+          // read-only transport — writes go through the REST API
+        });
+
+        socket.on('close', () => {
+          removeConnection(socket);
+        });
+      })
+      .catch(() => {
+        socket.close(4403, 'Access denied to channel');
+      });
   });
 }
