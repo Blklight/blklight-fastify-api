@@ -23,6 +23,7 @@ import {
   editMessage,
   deleteMessage,
   assertCanAccessChannel,
+  resolveProfileIdFromUserId,
 } from './chat.service';
 import { requireAdmin } from '../../hooks/admin-guard';
 import { createWsTicket, consumeWsTicket } from './ws-tickets';
@@ -665,7 +666,8 @@ export default async function chatRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const result = await createWsTicket(request.user.userId);
+    const profileId = await resolveProfileIdFromUserId(request.user.userId);
+    const result = createWsTicket(profileId);
 
     reply.code(201).send({
       data: result,
