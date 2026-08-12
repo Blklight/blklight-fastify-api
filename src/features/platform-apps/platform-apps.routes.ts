@@ -61,7 +61,18 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Activate apps for current user',
       tags: ['platform-apps'],
-      body: activateAppsSchema,
+      body: {
+        type: 'object',
+        properties: {
+          apps: {
+            type: 'array',
+            items: { type: 'string' },
+            minItems: 1,
+          },
+        },
+        required: ['apps'],
+        additionalProperties: false,
+      },
       response: {
         200: {
           type: 'object',

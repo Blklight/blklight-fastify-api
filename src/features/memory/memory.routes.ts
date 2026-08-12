@@ -10,7 +10,15 @@ export default async function memoryRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Semantic search across indexed content',
       tags: ['memory'],
-      querystring: searchQuerySchema,
+      querystring: {
+        type: 'object',
+        properties: {
+          q: { type: 'string', minLength: 1 },
+          limit: { type: 'string' },
+        },
+        required: ['q'],
+        additionalProperties: false,
+      },
       response: {
         200: {
           type: 'object',
@@ -55,7 +63,18 @@ export default async function memoryRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Get related items for a specific content piece',
       tags: ['memory'],
-      params: relatedParamsSchema,
+      params: {
+        type: 'object',
+        properties: {
+          sourceType: {
+            type: 'string',
+            enum: ['note', 'document', 'journal_highlight', 'book_chapter'],
+          },
+          sourceId: { type: 'string', minLength: 1 },
+        },
+        required: ['sourceType', 'sourceId'],
+        additionalProperties: false,
+      },
       querystring: {
         type: 'object',
         properties: {

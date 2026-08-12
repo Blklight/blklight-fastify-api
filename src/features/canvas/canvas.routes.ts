@@ -45,7 +45,30 @@ export default async function canvasRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Batch update note positions on canvas',
       tags: ['canvas'],
-      body: updatePositionsSchema,
+      body: {
+        type: 'object',
+        properties: {
+          positions: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              properties: {
+                noteId: { type: 'string', minLength: 1 },
+                x: { type: 'number' },
+                y: { type: 'number' },
+                w: { type: 'number' },
+                h: { type: 'number' },
+                z: { type: 'number' },
+              },
+              required: ['noteId', 'x', 'y'],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ['positions'],
+        additionalProperties: false,
+      },
       response: {
         200: {
           type: 'object',
