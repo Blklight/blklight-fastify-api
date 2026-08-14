@@ -2,8 +2,18 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index';
-import { registerSchema, loginSchema } from './auth.zod';
-import { registerUser, loginUser, refreshSession, logout, buildAuthSession, getOnboardingStep } from './auth.service';
+import { registerSchema, loginSchema, usernameSchema } from './auth.zod';
+import {
+  registerUser,
+  loginUser,
+  refreshSession,
+  logout,
+  buildAuthSession,
+  getOnboardingStep,
+  setOnboardingUsername,
+  completeOnboarding,
+  createSessionWithReply,
+} from './auth.service';
 import { users } from './auth.schema';
 import { verifyEmail, sendVerificationEmail, sendPasswordResetEmail, resetPassword } from '../email/email.service';
 import { requireFeature } from '../../config/features';
@@ -284,12 +294,98 @@ export default async function authRoutes(app: FastifyInstance) {
     const step = getOnboardingStep({
       username: userRow.username,
       onboardingComplete: userRow.onboardingComplete,
+      passwordHash: userRow.passwordHash,
     });
 
     reply.send({
-      data: { step, ...authSession },
+      data: {
+        step,
+        ...authSession,
+        user: {
+          ...authSession.user,
+          hasPassword: userRow.passwordHash !== null,
+        },
+      },
       error: null,
       message: 'Onboarding status retrieved',
+    });
+  });
+
+  app.post('/onboarding/username', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
+    schema: {
+      summary: 'Set username during OAuth onboarding',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['username'],
+        properties: {
+          username: { type: 'string', minLength: 3, maxLength: 30 },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = z.object({ username: usernameSchema }).safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const userId = request.user.userId;
+    await setOnboardingUsername(userId, parsed.data.username);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Username set successfully',
+    });
+  });
+
+  app.post('/onboarding/complete', {
+    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
+    schema: {
+      summary: 'Create onboarding records (profile, signature, workspace, canvas)',
+      tags: ['auth'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: { type: 'null' },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const userId = request.user.userId;
+    await completeOnboarding(userId);
+    await createSessionWithReply(userId, reply);
+
+    reply.send({
+      data: null,
+      error: null,
+      message: 'Onboarding complete',
     });
   });
 

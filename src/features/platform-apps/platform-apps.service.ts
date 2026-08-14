@@ -2,6 +2,7 @@ import { createId } from '@paralleldrive/cuid2';
 import { eq } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { platformApps, userApps, NewUserApp } from './platform-apps.schema';
+import { users } from '../auth/auth.schema';
 
 export async function listApps() {
   return db
@@ -60,6 +61,11 @@ export async function activateApps(userId: string, appSlugs: string[]) {
         set: { activatedAt: new Date() },
       });
   }
+
+  await db
+    .update(users)
+    .set({ onboardingComplete: true, updatedAt: new Date() })
+    .where(eq(users.id, userId));
 }
 
 export async function deactivateApp(userId: string, appId: string) {

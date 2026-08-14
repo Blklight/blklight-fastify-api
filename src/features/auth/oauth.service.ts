@@ -1,28 +1,8 @@
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { users } from './auth.schema';
-import { profiles } from '../profiles/profiles.schema';
-import { signatures } from '../signatures/signatures.schema';
-import { workspaces } from '../workspace/workspace.schema';
-import { canvas } from '../canvas/canvas.schema';
 import { createId } from '@paralleldrive/cuid2';
-import { generateUserHash, encryptSecret } from '../../utils/crypto';
-import { buildAuthSession } from './auth.service';
-import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
-import { env } from '../../config/env';
-import { sendVerificationEmail } from '../email/email.service';
-import { features } from '../../config/features';
-import type { FastifyInstance, FastifyReply } from 'fastify';
-
-let appInstance: FastifyInstance | null = null;
-
-async function getApp(): Promise<FastifyInstance> {
-  if (!appInstance) {
-    const { buildApp } = await import('../../app');
-    appInstance = await buildApp();
-  }
-  return appInstance;
-}
+import { NotFoundError, ConflictError, ValidationError } from '../../utils/errors';
 
 export interface OAuthUser {
   id: string;
@@ -35,11 +15,6 @@ export interface OAuthLoginResult {
   userId: string;
   onboardingComplete: boolean;
   isNew: boolean;
-}
-
-async function generateUserSecret(): Promise<string> {
-  const crypto = await import('node:crypto');
-  return crypto.randomBytes(32).toString('hex');
 }
 
 /**
@@ -215,123 +190,6 @@ export async function handleOAuthLink(
       updatedAt: new Date(),
     })
     .where(eq(users.id, userId));
-}
-
-/**
- * Complete the OAuth onboarding process.
- * @param userId - The user's ID
- * @param username - Chosen username
- * @returns Access token
- */
-export async function completeOnboarding(
-  userId: string,
-  username: string
-): Promise<{ accessToken: string }> {
-  const [user] = await db
-    .select()
-    .from(users)
-    .where(eq(users.id, userId))
-    .limit(1);
-
-  if (!user) {
-    throw new NotFoundError('User not found');
-  }
-
-  if (user.onboardingComplete) {
-    throw new ValidationError('Onboarding already complete');
-  }
-
-  const trimmedUsername = username.trim().toLowerCase();
-
-  if (trimmedUsername.length < 3 || trimmedUsername.length > 30) {
-    throw new ValidationError('Username must be 3-30 characters');
-  }
-
-  if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
-    throw new ValidationError('Username can only contain letters, numbers, and underscores');
-  }
-
-  const existingUsername = await db
-    .select()
-    .from(users)
-    .where(
-      and(
-        eq(users.username, trimmedUsername),
-        isNull(users.deletedAt)
-      )
-    )
-    .limit(1);
-
-  if (existingUsername.length > 0) {
-    throw new ConflictError('Username already taken');
-  }
-
-  const userSecret = await generateUserSecret();
-  const userHash = generateUserHash(user.id, user.email, user.createdAt, userSecret);
-  const encryptedSecret = encryptSecret(userSecret);
-
-  await db.transaction(async (tx) => {
-    await tx
-      .update(users)
-      .set({
-        username: trimmedUsername,
-        onboardingComplete: true,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, userId));
-
-    await tx.insert(profiles).values({
-      id: createId(),
-      userId,
-      username: trimmedUsername,
-    });
-
-    await tx.insert(signatures).values({
-      id: createId(),
-      userId,
-      userHash,
-      secretEncrypted: encryptedSecret,
-    });
-
-await tx.insert(workspaces).values({
-      id: createId(),
-      ownerId: userId,
-      type: 'personal',
-      name: 'My Workspace',
-      isPersonal: true,
-    });
-
-    const newWorkspace = await tx
-      .select()
-      .from(workspaces)
-      .where(eq(workspaces.ownerId, userId))
-      .limit(1);
-
-    if (!newWorkspace[0]) {
-      throw new Error('Failed to create workspace');
-    }
-
-    await tx.insert(canvas).values({
-      id: createId(),
-      workspaceId: newWorkspace[0].id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-  });
-
-  const app = await getApp();
-  const accessToken = await app.jwt.sign(
-    { userId, email: user.email, role: user.role },
-    { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
-  );
-
-  if (features.email) {
-    sendVerificationEmail(userId, user.email, trimmedUsername).catch((err) =>
-      console.error('Verification email enqueue failed:', err)
-    );
-  }
-
-  return { accessToken };
 }
 
 /**

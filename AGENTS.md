@@ -793,7 +793,11 @@ API docs at http://localhost:3000/docs
 - **platform_apps are seeded** — never created via API by regular users
 - **user_apps uses upsert** — activating an already-active app is a no-op
 - **onboarding_complete = true only after both steps are done** — username (OAuth) + app selection
+- **activateApps() sets onboarding_complete = true** — the single write point that completes onboarding; called by POST /api/v1/platform-apps/me
 - **Email-registered users skip the username step** — onboarding starts at app selection
+- **POST /api/v1/auth/onboarding/username is OAuth-only** — rejects email accounts (passwordHash set) and already-complete users
+- **POST /api/v1/auth/onboarding/complete is idempotent** — no-op if profile already exists; email accounts already have records from register
+- **completeOnboarding() is the shared entry point** — creates profile + signature + workspace + canvas atomically for OAuth; never creates a session by itself (route calls createSessionWithReply)
 - **FEATURE_MEMORY flag guards all memory routes and jobs** — if false, notes save normally with no side effects
 - **Embedding generation is always fire-and-forget** — never blocks note/document save response
 - **memory.job.ts calls Gemini text-embedding-004 via REST** — no SDK dependency
@@ -862,10 +866,11 @@ API docs at http://localhost:3000/docs
 ### OAuth registration
 
 1. GET /api/v1/auth/github or /google → OAuth flow
-2. POST /api/v1/auth/onboarding → username chosen, profile + signature + workspace + canvas created atomically
-3. Frontend redirects to app selection screen
-4. POST /api/v1/platform-apps/me → activates selected apps, sets onboarding_complete = true
-5. Frontend redirects to dashboard
+2. POST /api/v1/auth/onboarding/username → username chosen (validated via usernameSchema)
+3. POST /api/v1/auth/onboarding/complete → profile + signature + workspace + canvas created atomically
+4. Frontend redirects to app selection screen
+5. POST /api/v1/platform-apps/me → activates selected apps, sets onboarding_complete = true
+6. Frontend redirects to dashboard
 
 ## Platform Apps
 
@@ -927,6 +932,9 @@ Apps available at launch (seeded in `db/seed.ts`):
 | POST   | /api/v1/auth/login               | Login with email or username (optional rememberMe) | 10/min     |
 | POST   | /api/v1/auth/refresh             | Refresh access token          | None       |
 | POST   | /api/v1/auth/logout              | Logout and invalidate session | None       |
+| GET    | /api/v1/auth/onboarding/status   | Get onboarding step           | None       |
+| POST   | /api/v1/auth/onboarding/username | Set username during OAuth onboarding | None |
+| POST   | /api/v1/auth/onboarding/complete | Create onboarding records (profile, signature, workspace, canvas) | None |
 | POST   | /api/v1/auth/verify-email        | Verify email address          | None       |
 | POST   | /api/v1/auth/resend-verification | Resend verification email     | 3/hour     |
 | POST   | /api/v1/auth/forgot-password     | Request password reset        | 3/hour     |
@@ -944,7 +952,6 @@ Apps available at launch (seeded in `db/seed.ts`):
 | GET    | /api/v1/auth/google/callback          | No   | Google OAuth callback                     |
 | GET    | /api/v1/auth/google/link              | Yes  | Start Google account linking              |
 | GET    | /api/v1/auth/google/link/callback     | Yes  | Google linking callback                   |
-| POST   | /api/v1/auth/onboarding               | Yes  | Complete OAuth user onboarding (username) |
 | DELETE | /api/v1/auth/account/unlink/:provider | Yes  | Unlink OAuth provider                     |
 
 ## Profile Routes

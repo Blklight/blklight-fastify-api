@@ -1,5 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
-import { eq, and, lt, isNull, gt, or } from 'drizzle-orm';
+import { eq, and, lt, isNull, gt, or, ne } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { users, sessions, NewUser, NewSession, User } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
@@ -8,7 +8,7 @@ import { workspaces } from '../workspace/workspace.schema';
 import { canvas } from '../canvas/canvas.schema';
 import { getUserApps } from '../platform-apps/platform-apps.service';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
-import { ConflictError, UnauthorizedError, NotFoundError } from '../../utils/errors';
+import { ConflictError, UnauthorizedError, NotFoundError, ValidationError } from '../../utils/errors';
 import { env } from '../../config/env';
 import { sendVerificationEmail } from '../email/email.service';
 import { features } from '../../config/features';
@@ -82,14 +82,27 @@ export async function buildAuthSession(
   };
 }
 
-export function getOnboardingStep(user: { username: string | null; onboardingComplete: boolean }): 'username' | 'apps' | 'complete' {
+export function getOnboardingStep(user: {
+  username: string | null;
+  onboardingComplete: boolean;
+  passwordHash: string | null;
+}): 'username' | 'apps' | 'complete' {
   if (user.onboardingComplete) {
     return 'complete';
   }
-  if (!user.username) {
+  if (user.passwordHash === null && isOAuthPlaceholderUsername(user.username)) {
     return 'username';
   }
   return 'apps';
+}
+
+/**
+ * Detect the temporary username assigned by handleOAuthLogin
+ * (`github_<id>` / `google_<id>`) to distinguish "needs a username"
+ * from "picked a username, still onboarding".
+ */
+function isOAuthPlaceholderUsername(username: string | null): boolean {
+  return !!username && /^(github|google)_[0-9]+$/.test(username);
 }
 
 function parseExpiration(expiresIn: string): Date {
@@ -112,6 +125,171 @@ export async function registerUser(
   const { user } = await createUser(email, username, password);
   const refreshToken = await createSession(user.id);
   return { user, refreshToken };
+}
+
+/**
+ * Set the username for an OAuth account during onboarding.
+ * Only callable while the account still has no password (OAuth placeholder).
+ * @param userId - The user's ID
+ * @param username - The chosen username
+ * @throws NotFoundError if the user does not exist
+ * @throws ValidationError if the account is complete or already has a password
+ * @throws ConflictError if the username is already taken
+ */
+export async function setOnboardingUsername(userId: string, username: string): Promise<void> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  if (user.onboardingComplete) {
+    throw new ValidationError('Onboarding already complete');
+  }
+
+  if (user.passwordHash !== null) {
+    throw new ValidationError('Username already set');
+  }
+
+  const trimmedUsername = username.trim();
+
+  if (trimmedUsername.length < 3 || trimmedUsername.length > 30) {
+    throw new ValidationError('Username must be 3-30 characters');
+  }
+
+  if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
+    throw new ValidationError('Username can only contain letters, numbers, and underscores');
+  }
+
+  const existingUsername = await db
+    .select()
+    .from(users)
+    .where(
+      and(
+        eq(users.username, trimmedUsername),
+        ne(users.id, userId),
+        or(
+          isNull(users.deletedAt),
+          gt(users.deletedAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
+        )
+      )
+    )
+    .limit(1);
+
+  if (existingUsername.length > 0) {
+    throw new ConflictError('Username already taken');
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ username: trimmedUsername, updatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    await tx
+      .update(profiles)
+      .set({ username: trimmedUsername, updatedAt: new Date() })
+      .where(eq(profiles.userId, userId));
+  });
+}
+
+/**
+ * Create the remaining onboarding records for an account.
+ * Email accounts already have profile, signature, workspace, and canvas from
+ * createUser — this is a no-op for them. OAuth accounts get all four created
+ * atomically using the username chosen via setOnboardingUsername.
+ * @param userId - The user's ID
+ * @returns The user row
+ * @throws NotFoundError if the user does not exist
+ * @throws ValidationError if the username is still an OAuth placeholder
+ */
+export async function completeOnboarding(userId: string): Promise<User> {
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  if (isOAuthPlaceholderUsername(user.username)) {
+    throw new ValidationError('Set a username before completing onboarding');
+  }
+
+  const existingProfile = await db
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(eq(profiles.userId, userId))
+    .limit(1);
+
+  if (existingProfile.length > 0) {
+    return user;
+  }
+
+  const now = new Date();
+  const secret = generateSecret();
+  const userHash = generateUserHash(user.id, user.email, user.createdAt, secret);
+  const secretEncrypted = encryptSecret(secret);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(profiles).values({
+      id: createId(),
+      userId,
+      username: user.username,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await tx.insert(signatures).values({
+      id: createId(),
+      userId,
+      userHash,
+      secretEncrypted,
+      createdAt: now,
+    });
+
+    await tx.insert(workspaces).values({
+      id: createId(),
+      ownerId: userId,
+      type: 'personal',
+      name: `${user.username}'s workspace`,
+      isPersonal: true,
+      colorLabels: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const [newWorkspace] = await tx
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.ownerId, userId))
+      .limit(1);
+
+    if (!newWorkspace) {
+      throw new Error('Failed to create workspace');
+    }
+
+    await tx.insert(canvas).values({
+      id: createId(),
+      workspaceId: newWorkspace.id,
+      createdAt: now,
+      updatedAt: now,
+    });
+  });
+
+  if (features.email) {
+    sendVerificationEmail(userId, user.email, user.username).catch((err) =>
+      console.error('Verification email enqueue failed:', err)
+    );
+  }
+
+  return user;
 }
 
 async function createSession(userId: string, rememberMe?: boolean): Promise<string> {
@@ -219,6 +397,7 @@ export async function createUser(
       salt,
       emailVerified: false,
       role: 'user',
+      onboardingComplete: false,
       createdAt: now,
       updatedAt: now,
     };

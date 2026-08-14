@@ -104,7 +104,7 @@ export type LoginFormData = z.infer<typeof loginSchema>;
 
 /**
  * @form Onboarding
- * @route POST /api/v1/auth/onboarding
+ * @route POST /api/v1/auth/onboarding/username
  * @fields username
  */
 export const onboardingSchema = z.object({

@@ -1,11 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { z } from 'zod';
 import {
   fetchGitHubUser,
   fetchGoogleUser,
   handleOAuthLogin,
   handleOAuthLink,
-  completeOnboarding,
   unlinkProvider,
 } from './oauth.service';
 import { env } from '../../config/env';
@@ -21,13 +19,6 @@ async function getApp(): Promise<FastifyInstance> {
   }
   return appInstance;
 }
-
-const onboardingSchema = z.object({
-  username: z.string()
-    .min(3, 'Username must be at least 3 characters')
-    .max(30, 'Username must be at most 30 characters')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
-});
 
 export default async function oauthRoutes(app: FastifyInstance) {
   const githubOAuth = app.githubOAuth2;
@@ -189,51 +180,6 @@ export default async function oauthRoutes(app: FastifyInstance) {
 
     await handleOAuthLink(userId, 'google', googleUser.id);
     return reply.redirect(`${env.FRONTEND_URL}/settings/account?linked=google`);
-  });
-
-  app.post('/onboarding', {
-    preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
-    schema: {
-      summary: 'Complete OAuth onboarding',
-      tags: ['oauth'],
-      body: {
-        type: 'object',
-        required: ['username'],
-        properties: {
-          username: { type: 'string', minLength: 3, maxLength: 30 },
-        },
-      },
-      response: {
-        201: { type: 'object', properties: { data: { type: 'object' }, error: { type: 'null' }, message: { type: 'string' } } },
-        400: { type: 'object', properties: { data: { type: 'null' }, error: { type: 'object' }, message: { type: 'string' } } },
-      },
-    },
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    requireFeature('oauth');
-
-    const { userId } = request.user;
-    const parsed = onboardingSchema.safeParse(request.body);
-
-    if (!parsed.success) {
-      return reply.code(400).send({
-        data: null,
-        error: {
-          code: 'VALIDATION_ERROR',
-          message: 'Request validation failed',
-          fields: Object.fromEntries(parsed.error.issues.map((i) => [i.path.join('.'), i.message])),
-        },
-        message: 'Validation failed',
-      });
-    }
-
-    const { accessToken } = await completeOnboarding(userId, parsed.data.username);
-    await createSessionWithReply(userId, reply);
-
-    reply.code(201).send({
-      data: { accessToken },
-      error: null,
-      message: 'Onboarding complete',
-    });
   });
 
   app.delete('/account/unlink/:provider', {
