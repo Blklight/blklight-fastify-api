@@ -1,14 +1,14 @@
 import { pgTable, text, timestamp, unique } from 'drizzle-orm/pg-core';
 import { documents } from '../documents/documents.schema';
-import { users } from '../auth/auth.schema';
+import { profiles } from '../profiles/profiles.schema';
 
 export const documentBookmarks = pgTable('document_bookmarks', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  profileId: text('profile_id').notNull().references(() => profiles.id),
   documentId: text('document_id').notNull().references(() => documents.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
-  userDocumentUnique: unique().on(table.userId, table.documentId),
+  profileDocumentUnique: unique().on(table.profileId, table.documentId),
 }));
 
 export type DocumentBookmark = typeof documentBookmarks.$inferSelect;

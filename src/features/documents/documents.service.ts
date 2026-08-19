@@ -771,10 +771,11 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
  * Get a full public document by username and slug.
  * @param username - The author's username
  * @param slug - The document's slug
+ * @param profileId - Optional profile ID to check if the user liked the document
  * @returns Full document with style, authorship, and exercises if tutorial
  * @throws NotFoundError if document not found, deleted, or not published
  */
-export async function getPublicDocument(username: string, slug: string, userId?: string): Promise<DocumentFull> {
+export async function getPublicDocument(username: string, slug: string, profileId?: string): Promise<DocumentFull> {
   const docResult = await db
     .select({
       id: documents.id,
@@ -811,7 +812,7 @@ export async function getPublicDocument(username: string, slug: string, userId?:
   }
 
   const doc = docResult[0]!;
-  const likesData = await getLikesCount(doc.id, userId);
+  const likesData = await getLikesCount(doc.id, profileId);
   const docTags = await getDocumentTags(doc.id);
   const docCategory = await getDocumentCategory(doc.id);
 

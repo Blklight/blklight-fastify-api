@@ -12,6 +12,7 @@ import {
 import { profiles } from '../profiles/profiles.schema';
 import { db } from '../../db/index';
 import { eq } from 'drizzle-orm';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 interface JwtPayload {
   userId: string;
@@ -118,15 +119,15 @@ export default async function documentRoutes(app: FastifyInstance) {
   }, async (request: FastifyRequest<{ Params: { username: string; slug: string } }>, reply: FastifyReply) => {
     const { username, slug } = request.params;
 
-    let userId: string | undefined;
+    let profileId: string | undefined;
     try {
       await request.jwtVerify();
-      userId = request.user.userId;
+      profileId = await resolveProfileIdFromUserId(request.user.userId);
     } catch {
-      userId = undefined;
+      profileId = undefined;
     }
 
-    const document = await getPublicDocument(username, slug, userId);
+    const document = await getPublicDocument(username, slug, profileId);
 
     reply.send({
       data: document,

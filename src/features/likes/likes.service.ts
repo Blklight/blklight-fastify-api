@@ -18,10 +18,10 @@ export interface ToggleLikeResult {
 /**
  * Get the likes count for a document and optionally whether the user has liked it.
  * @param documentId - The document ID
- * @param userId - Optional user ID to check if they liked the document
+ * @param profileId - Optional profile ID to check if they liked the document
  * @returns Object with likes count and liked_by_me status
  */
-export async function getLikesCount(documentId: string, userId?: string): Promise<LikesCount> {
+export async function getLikesCount(documentId: string, profileId?: string): Promise<LikesCount> {
   const [countResult] = await db
     .select({ count: count() })
     .from(documentLikes)
@@ -29,7 +29,7 @@ export async function getLikesCount(documentId: string, userId?: string): Promis
 
   const likesCount = Number(countResult?.count ?? 0);
 
-  if (!userId) {
+  if (!profileId) {
     return { likesCount, likedByMe: null };
   }
 
@@ -38,7 +38,7 @@ export async function getLikesCount(documentId: string, userId?: string): Promis
     .from(documentLikes)
     .where(
       and(
-        eq(documentLikes.userId, userId),
+        eq(documentLikes.profileId, profileId),
         eq(documentLikes.documentId, documentId)
       )
     )
@@ -49,12 +49,12 @@ export async function getLikesCount(documentId: string, userId?: string): Promis
 
 /**
  * Toggle like status for a document.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param documentId - The document ID
  * @returns Object with liked status and updated likes count
  * @throws NotFoundError if document not found or not published
  */
-export async function toggleLike(userId: string, documentId: string): Promise<ToggleLikeResult> {
+export async function toggleLike(profileId: string, documentId: string): Promise<ToggleLikeResult> {
   const [doc] = await db
     .select({ id: documents.id })
     .from(documents)
@@ -75,7 +75,7 @@ export async function toggleLike(userId: string, documentId: string): Promise<To
     .from(documentLikes)
     .where(
       and(
-        eq(documentLikes.userId, userId),
+        eq(documentLikes.profileId, profileId),
         eq(documentLikes.documentId, documentId)
       )
     )
@@ -90,7 +90,7 @@ export async function toggleLike(userId: string, documentId: string): Promise<To
   } else {
     await db.insert(documentLikes).values({
       id: createId(),
-      userId,
+      profileId,
       documentId,
       createdAt: new Date(),
     });

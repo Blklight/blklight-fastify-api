@@ -4,31 +4,14 @@ import { db } from '../../db/index';
 import { chatServers, chatServerMembers, chatChannels, chatMessages, ChatServer, ChatServerMember, ChatChannel, ChatMessage } from './chat.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../utils/errors';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import { broadcastToChannel } from './ws-registry';
 import type { CreateServerInput, CreateChannelInput, MessageQueryInput } from './chat.zod';
 
+export { resolveProfileIdFromUserId } from '../../utils/profile';
+
 const MAX_LIMIT = 50;
-
-/**
- * Resolve the profile ID for a user.
- * @param userId - The user's ID
- * @returns Profile ID
- * @throws NotFoundError if profile not found
- */
-export async function resolveProfileIdFromUserId(userId: string): Promise<string> {
-  const [profile] = await db
-    .select({ id: profiles.id })
-    .from(profiles)
-    .where(eq(profiles.userId, userId))
-    .limit(1);
-
-  if (!profile) {
-    throw new NotFoundError('Profile not found');
-  }
-
-  return profile.id;
-}
 
 /**
  * Ensure a chat server exists.

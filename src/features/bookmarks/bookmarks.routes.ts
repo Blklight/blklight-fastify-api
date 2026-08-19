@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { toggleBookmark, getMyBookmarks } from './bookmarks.service';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 interface JwtPayload {
   userId: string;
@@ -59,7 +60,8 @@ export default async function bookmarksRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const { userId } = request.user;
 
-    const result = await toggleBookmark(userId, id);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const result = await toggleBookmark(profileId, id);
 
     reply.send({
       data: result,
@@ -124,7 +126,8 @@ export default async function bookmarksRoutes(app: FastifyInstance) {
       });
     }
 
-    const result = await getMyBookmarks(userId, parsed.data);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const result = await getMyBookmarks(profileId, parsed.data);
 
     reply.send({
       data: result,

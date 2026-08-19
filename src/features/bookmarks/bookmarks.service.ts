@@ -4,7 +4,6 @@ import { db } from '../../db/index';
 import { documentBookmarks } from './bookmarks.schema';
 import { documents, documentTypes } from '../documents/documents.schema';
 import { profiles } from '../profiles/profiles.schema';
-import { users } from '../auth/auth.schema';
 import { NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import { getDocumentTags } from '../tags/tags.service';
@@ -25,15 +24,15 @@ export interface BookmarkResult {
 
 /**
  * Get the user's bookmarks with cursor-based pagination.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param params - Pagination parameters
  * @returns Paginated list of bookmarked documents
  */
-export async function getMyBookmarks(userId: string, params: BookmarkParams): Promise<BookmarkResult> {
+export async function getMyBookmarks(profileId: string, params: BookmarkParams): Promise<BookmarkResult> {
   const limit = Math.min(params.limit ?? 20, 50);
   const conditions: ReturnType<typeof eq>[] = [];
 
-  conditions.push(eq(documentBookmarks.userId, userId));
+  conditions.push(eq(documentBookmarks.profileId, profileId));
 
   if (params.cursor) {
     const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
@@ -58,14 +57,12 @@ export async function getMyBookmarks(userId: string, params: BookmarkParams): Pr
     .innerJoin(documents, eq(documentBookmarks.documentId, documents.id))
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
-    .innerJoin(users, eq(profiles.userId, users.id))
     .where(
       and(
         ...conditions,
         eq(documents.status, 'published'),
         isNull(documents.deletedAt),
-        isNull(profiles.deletedAt),
-        isNull(users.deletedAt)
+        isNull(profiles.deletedAt)
       )
     )
     .orderBy(desc(documents.publishedAt), desc(documents.id))
@@ -119,11 +116,10 @@ export async function getMyBookmarks(userId: string, params: BookmarkParams): Pr
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
     .where(
       and(
-        eq(documentBookmarks.userId, userId),
+        eq(documentBookmarks.profileId, profileId),
         eq(documents.status, 'published'),
         isNull(documents.deletedAt),
-        isNull(profiles.deletedAt),
-        isNull(users.deletedAt)
+        isNull(profiles.deletedAt)
       )
     );
 
@@ -134,12 +130,12 @@ export async function getMyBookmarks(userId: string, params: BookmarkParams): Pr
 
 /**
  * Toggle bookmark status for a document.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param documentId - The document ID
  * @returns Object with bookmarked status
  * @throws NotFoundError if document not found or not published
  */
-export async function toggleBookmark(userId: string, documentId: string): Promise<{ bookmarked: boolean }> {
+export async function toggleBookmark(profileId: string, documentId: string): Promise<{ bookmarked: boolean }> {
   const [doc] = await db
     .select({ id: documents.id })
     .from(documents)
@@ -160,7 +156,7 @@ export async function toggleBookmark(userId: string, documentId: string): Promis
     .from(documentBookmarks)
     .where(
       and(
-        eq(documentBookmarks.userId, userId),
+        eq(documentBookmarks.profileId, profileId),
         eq(documentBookmarks.documentId, documentId)
       )
     )
@@ -175,7 +171,7 @@ export async function toggleBookmark(userId: string, documentId: string): Promis
   } else {
     await db.insert(documentBookmarks).values({
       id: createId(),
-      userId,
+      profileId,
       documentId,
       createdAt: new Date(),
     });
@@ -187,17 +183,17 @@ export async function toggleBookmark(userId: string, documentId: string): Promis
 
 /**
  * Check if a user has bookmarked a document.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param documentId - The document ID
  * @returns True if bookmarked, false otherwise
  */
-export async function isBookmarked(userId: string, documentId: string): Promise<boolean> {
+export async function isBookmarked(profileId: string, documentId: string): Promise<boolean> {
   const [existingBookmark] = await db
     .select({ id: documentBookmarks.id })
     .from(documentBookmarks)
     .where(
       and(
-        eq(documentBookmarks.userId, userId),
+        eq(documentBookmarks.profileId, profileId),
         eq(documentBookmarks.documentId, documentId)
       )
     )

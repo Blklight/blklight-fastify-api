@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { toggleLike, getLikesCount } from './likes.service';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 interface JwtPayload {
   userId: string;
@@ -59,7 +60,8 @@ export default async function likesRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = params;
 
-    const result = await toggleLike(userId, id);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const result = await toggleLike(profileId, id);
 
     reply.send({
       data: result,
@@ -100,16 +102,16 @@ export default async function likesRoutes(app: FastifyInstance) {
     const params = request.params as DocumentParams;
     const { id } = params;
 
-    let userId: string | undefined;
+    let profileId: string | undefined;
 
     try {
       await request.jwtVerify();
-      userId = request.user.userId;
+      profileId = await resolveProfileIdFromUserId(request.user.userId);
     } catch {
-      userId = undefined;
+      profileId = undefined;
     }
 
-    const result = await getLikesCount(id, userId);
+    const result = await getLikesCount(id, profileId);
 
     reply.send({
       data: result,
