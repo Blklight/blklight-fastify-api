@@ -4,7 +4,6 @@ import { db } from '../../db/index';
 import { highlights, highlightPalette, Highlight } from './highlights.schema';
 import { documents } from '../documents/documents.schema';
 import { profiles } from '../profiles/profiles.schema';
-import { users } from '../auth/auth.schema';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import DEFAULT_PALETTE from '../../config/highlight-palette';
@@ -25,11 +24,11 @@ export interface PaletteResult {
   isCustom: boolean;
 }
 
-async function getActivePalette(userId: string): Promise<string[]> {
+async function getActivePalette(profileId: string): Promise<string[]> {
   const [row] = await db
     .select()
     .from(highlightPalette)
-    .where(eq(highlightPalette.userId, userId))
+    .where(eq(highlightPalette.profileId, profileId))
     .limit(1);
 
   if (!row) {
@@ -41,14 +40,14 @@ async function getActivePalette(userId: string): Promise<string[]> {
 
 /**
  * Get the user's highlight palette.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @returns Palette colors and whether it's customized
  */
-export async function getPalette(userId: string): Promise<PaletteResult> {
+export async function getPalette(profileId: string): Promise<PaletteResult> {
   const [row] = await db
     .select()
     .from(highlightPalette)
-    .where(eq(highlightPalette.userId, userId))
+    .where(eq(highlightPalette.profileId, profileId))
     .limit(1);
 
   if (!row) {
@@ -66,14 +65,14 @@ export async function getPalette(userId: string): Promise<PaletteResult> {
 
 /**
  * Update the user's highlight palette.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param colors - Array of 5 hex color strings
  */
-export async function updatePalette(userId: string, colors: string[]): Promise<void> {
+export async function updatePalette(profileId: string, colors: string[]): Promise<void> {
   const [existing] = await db
     .select()
     .from(highlightPalette)
-    .where(eq(highlightPalette.userId, userId))
+    .where(eq(highlightPalette.profileId, profileId))
     .limit(1);
 
   const now = new Date();
@@ -86,7 +85,7 @@ export async function updatePalette(userId: string, colors: string[]): Promise<v
   } else {
     await db.insert(highlightPalette).values({
       id: createId(),
-      userId,
+      profileId,
       colors,
       createdAt: now,
       updatedAt: now,
@@ -96,11 +95,11 @@ export async function updatePalette(userId: string, colors: string[]): Promise<v
 
 /**
  * Create a new highlight.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param data - Highlight data
  * @returns Created highlight
  */
-export async function createHighlight(userId: string, data: CreateHighlightInput): Promise<Highlight> {
+export async function createHighlight(profileId: string, data: CreateHighlightInput): Promise<Highlight> {
   const [doc] = await db
     .select({ id: documents.id })
     .from(documents)
@@ -117,7 +116,7 @@ export async function createHighlight(userId: string, data: CreateHighlightInput
     throw new NotFoundError('Document not found or not published');
   }
 
-  const palette = await getActivePalette(userId);
+  const palette = await getActivePalette(profileId);
   if (!palette.includes(data.selection.color)) {
     throw new ValidationError('Color must be from your highlight palette');
   }
@@ -127,7 +126,7 @@ export async function createHighlight(userId: string, data: CreateHighlightInput
     .insert(highlights)
     .values({
       id: createId(),
-      userId,
+      profileId,
       documentId: data.documentId,
       selection: data.selection,
       annotation: data.annotation ?? null,
@@ -141,20 +140,20 @@ export async function createHighlight(userId: string, data: CreateHighlightInput
 
 /**
  * Update a highlight.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param id - Highlight ID
  * @param data - Fields to update
  * @returns Updated highlight
  */
 export async function updateHighlight(
-  userId: string,
+  profileId: string,
   id: string,
   data: UpdateHighlightInput
 ): Promise<Highlight> {
   const [existing] = await db
     .select()
     .from(highlights)
-    .where(and(eq(highlights.id, id), eq(highlights.userId, userId)))
+    .where(and(eq(highlights.id, id), eq(highlights.profileId, profileId)))
     .limit(1);
 
   if (!existing) {
@@ -162,7 +161,7 @@ export async function updateHighlight(
   }
 
   if (data.selection?.color) {
-    const palette = await getActivePalette(userId);
+    const palette = await getActivePalette(profileId);
     if (!palette.includes(data.selection.color)) {
       throw new ValidationError('Color must be from your highlight palette');
     }
@@ -192,14 +191,14 @@ export async function updateHighlight(
 
 /**
  * Delete a highlight.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param id - Highlight ID
  */
-export async function deleteHighlight(userId: string, id: string): Promise<void> {
+export async function deleteHighlight(profileId: string, id: string): Promise<void> {
   const [existing] = await db
     .select()
     .from(highlights)
-    .where(and(eq(highlights.id, id), eq(highlights.userId, userId)))
+    .where(and(eq(highlights.id, id), eq(highlights.profileId, profileId)))
     .limit(1);
 
   if (!existing) {
@@ -236,12 +235,12 @@ export interface HighlightGroupedResult {
 
 /**
  * Get all highlights for a user, grouped by document.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param params - Pagination params
  * @returns Grouped highlights with pagination
  */
 export async function getMyHighlights(
-  userId: string,
+  profileId: string,
   params: HighlightParams
 ): Promise<HighlightGroupedResult> {
   const limit = Math.min(params.limit ?? 20, 50);
@@ -249,7 +248,7 @@ export async function getMyHighlights(
   let baseQuery = db
     .select({
       id: highlights.id,
-      userId: highlights.userId,
+      profileId: highlights.profileId,
       documentId: highlights.documentId,
       selection: highlights.selection,
       annotation: highlights.annotation,
@@ -262,7 +261,7 @@ export async function getMyHighlights(
     .from(highlights)
     .innerJoin(documents, eq(highlights.documentId, documents.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
-    .where(eq(highlights.userId, userId));
+    .where(eq(highlights.profileId, profileId));
 
   let results: any[];
 
@@ -271,7 +270,7 @@ export async function getMyHighlights(
     results = await db
       .select({
         id: highlights.id,
-        userId: highlights.userId,
+        profileId: highlights.profileId,
         documentId: highlights.documentId,
         selection: highlights.selection,
         annotation: highlights.annotation,
@@ -286,7 +285,7 @@ export async function getMyHighlights(
       .innerJoin(profiles, eq(documents.authorId, profiles.id))
       .where(
         and(
-          eq(highlights.userId, userId),
+          eq(highlights.profileId, profileId),
           sql`${highlights.createdAt} < ${publishedAt}`
         )
       )
@@ -318,7 +317,7 @@ export async function getMyHighlights(
     }
     groupedMap.get(r.documentId)!.highlights.push({
       id: r.id,
-      userId: r.userId,
+      profileId: r.profileId,
       documentId: r.documentId,
       selection: r.selection as Selection,
       annotation: r.annotation as Record<string, unknown> | null,
@@ -336,7 +335,7 @@ export async function getMyHighlights(
   const countResult = await db
     .select({ count: sql<number>`COUNT(DISTINCT ${highlights.documentId})` })
     .from(highlights)
-    .where(eq(highlights.userId, userId));
+    .where(eq(highlights.profileId, profileId));
 
   const total = Number(countResult[0]?.count ?? 0);
 
@@ -345,12 +344,12 @@ export async function getMyHighlights(
 
 /**
  * Get all highlights for a user on a specific document, in reading order.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param documentId - Document ID
  * @returns Highlights sorted by position
  */
 export async function getDocumentHighlights(
-  userId: string,
+  profileId: string,
   documentId: string
 ): Promise<Highlight[]> {
   const results = await db
@@ -358,7 +357,7 @@ export async function getDocumentHighlights(
     .from(highlights)
     .where(
       and(
-        eq(highlights.userId, userId),
+        eq(highlights.profileId, profileId),
         eq(highlights.documentId, documentId)
       )
     )

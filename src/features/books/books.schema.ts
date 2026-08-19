@@ -3,7 +3,6 @@ import { profiles } from '../profiles/profiles.schema';
 import { documents } from '../documents/documents.schema';
 import { categories } from '../categories/categories.schema';
 import { tags } from '../tags/tags.schema';
-import { users } from '../auth/auth.schema';
 
 export const books = pgTable('books', {
   id: text('id').primaryKey(),
@@ -50,23 +49,23 @@ export const bookTags = pgTable('book_tags', {
 
 export const bookProgress = pgTable('book_progress', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  profileId: text('profile_id').notNull().references(() => profiles.id),
   bookId: text('book_id').notNull().references(() => books.id),
   lastChapterId: text('last_chapter_id').references(() => bookChapters.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
-  userBookUnique: unique().on(table.userId, table.bookId),
+  profileBookUnique: unique().on(table.profileId, table.bookId),
 }));
 
 export const bookChapterProgress = pgTable('book_chapter_progress', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  profileId: text('profile_id').notNull().references(() => profiles.id),
   chapterId: text('chapter_id').notNull().references(() => bookChapters.id),
   isRead: boolean('is_read').default(false).notNull(),
   readAt: timestamp('read_at'),
 }, (table) => ({
-  userChapterUnique: unique().on(table.userId, table.chapterId),
+  profileChapterUnique: unique().on(table.profileId, table.chapterId),
 }));
 
 export type Book = typeof books.$inferSelect;

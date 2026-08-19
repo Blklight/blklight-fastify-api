@@ -274,7 +274,8 @@ export async function addHighlightToJournal(
   const [highlight] = await db
     .select()
     .from(highlights)
-    .where(and(eq(highlights.id, data.highlightId), eq(highlights.userId, userId)))
+    .innerJoin(profiles, eq(highlights.profileId, profiles.id))
+    .where(and(eq(highlights.id, data.highlightId), eq(profiles.userId, userId)))
     .limit(1);
 
   if (!highlight) {

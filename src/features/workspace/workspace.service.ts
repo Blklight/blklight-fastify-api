@@ -2,6 +2,7 @@ import { eq, and, count, sql } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { workspaces, Workspace } from './workspace.schema';
 import { highlights } from '../highlights/highlights.schema';
+import { profiles } from '../profiles/profiles.schema';
 import { journals } from '../journals/journals.schema';
 import { ValidationError } from '../../utils/errors';
 import { NOTE_COLORS } from '../../config/note-colors';
@@ -41,7 +42,8 @@ export async function getMyWorkspace(userId: string): Promise<WorkspaceSummary> 
   const [highlightsCount] = await db
     .select({ count: count() })
     .from(highlights)
-    .where(eq(highlights.userId, userId))
+    .innerJoin(profiles, eq(highlights.profileId, profiles.id))
+    .where(eq(profiles.userId, userId))
     .limit(1);
 
   const [journalsCount] = await db

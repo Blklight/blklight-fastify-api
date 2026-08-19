@@ -978,10 +978,10 @@ export interface BookFull {
  * Get a full public book by username and slug.
  * @param username - The author's username
  * @param slug - The book's slug
- * @param userId - The authenticated user's ID
+ * @param profileId - The authenticated user's profile ID
  * @returns Full book with chapters and progress
  */
-export async function getPublicBook(username: string, slug: string, userId?: string): Promise<BookFull> {
+export async function getPublicBook(username: string, slug: string, profileId: string): Promise<BookFull> {
   const [book] = await db
     .select({
       id: books.id,
@@ -1041,24 +1041,22 @@ export async function getPublicBook(username: string, slug: string, userId?: str
     .orderBy(bookChapters.position);
 
   let userProgress: BookProgress | null = null;
-  if (userId) {
-    const [bp] = await db
-      .select()
-      .from(bookProgress)
-      .where(and(eq(bookProgress.bookId, book.id), eq(bookProgress.userId, userId)))
-      .limit(1);
-    userProgress = bp ?? null;
-  }
+  const [bp] = await db
+    .select()
+    .from(bookProgress)
+    .where(and(eq(bookProgress.bookId, book.id), eq(bookProgress.profileId, profileId)))
+    .limit(1);
+  userProgress = bp ?? null;
 
   const chapterProgressMap = new Map<string, { isRead: boolean; readAt: Date | null }>();
-  if (userId && chapters.length > 0) {
+  if (chapters.length > 0) {
     const chapterIds = chapters.map((c) => c.id);
     const progressRows = await db
       .select()
       .from(bookChapterProgress)
       .where(
         and(
-          eq(bookChapterProgress.userId, userId),
+          eq(bookChapterProgress.profileId, profileId),
           sql`${bookChapterProgress.chapterId} IN (${sql.join(chapterIds.map((id) => sql`${id}`), sql`, `)})`
         )
       );
@@ -1110,11 +1108,11 @@ export async function getPublicBook(username: string, slug: string, userId?: str
 
 /**
  * Update reading progress for a user on a book.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param bookId - Book ID
  * @param chapterId - Chapter ID that was read
  */
-export async function updateProgress(userId: string, bookId: string, chapterId: string): Promise<void> {
+export async function updateProgress(profileId: string, bookId: string, chapterId: string): Promise<void> {
   const [book] = await db
     .select({ id: books.id })
     .from(books)
@@ -1141,7 +1139,7 @@ export async function updateProgress(userId: string, bookId: string, chapterId: 
     const [existingProgress] = await tx
       .select()
       .from(bookProgress)
-      .where(and(eq(bookProgress.userId, userId), eq(bookProgress.bookId, bookId)))
+      .where(and(eq(bookProgress.profileId, profileId), eq(bookProgress.bookId, bookId)))
       .limit(1);
 
     if (existingProgress) {
@@ -1152,7 +1150,7 @@ export async function updateProgress(userId: string, bookId: string, chapterId: 
     } else {
       await tx.insert(bookProgress).values({
         id: createId(),
-        userId,
+        profileId,
         bookId,
         lastChapterId: chapterId,
         createdAt: now,
@@ -1163,7 +1161,7 @@ export async function updateProgress(userId: string, bookId: string, chapterId: 
     const [existingChapterProgress] = await tx
       .select()
       .from(bookChapterProgress)
-      .where(and(eq(bookChapterProgress.userId, userId), eq(bookChapterProgress.chapterId, chapterId)))
+      .where(and(eq(bookChapterProgress.profileId, profileId), eq(bookChapterProgress.chapterId, chapterId)))
       .limit(1);
 
     if (existingChapterProgress) {
@@ -1174,7 +1172,7 @@ export async function updateProgress(userId: string, bookId: string, chapterId: 
     } else {
       await tx.insert(bookChapterProgress).values({
         id: createId(),
-        userId,
+        profileId,
         chapterId,
         isRead: true,
         readAt: now,

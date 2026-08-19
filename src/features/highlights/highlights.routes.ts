@@ -14,6 +14,7 @@ import {
   getPalette,
   updatePalette,
 } from './highlights.service';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export default async function highlightRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -37,7 +38,8 @@ export default async function highlightRoutes(app: FastifyInstance) {
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { userId } = request.user;
-    const palette = await getPalette(userId);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const palette = await getPalette(profileId);
 
     reply.send({
       data: palette,
@@ -99,7 +101,8 @@ export default async function highlightRoutes(app: FastifyInstance) {
       });
     }
 
-    await updatePalette(userId, parsed.data.colors);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    await updatePalette(profileId, parsed.data.colors);
 
     reply.send({
       data: null,
@@ -158,7 +161,8 @@ export default async function highlightRoutes(app: FastifyInstance) {
       });
     }
 
-    const result = await getMyHighlights(userId, parsed.data);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const result = await getMyHighlights(profileId, parsed.data);
 
     reply.send({
       data: result,
@@ -237,7 +241,8 @@ export default async function highlightRoutes(app: FastifyInstance) {
       });
     }
 
-    const highlight = await updateHighlight(userId, id, parsed.data);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const highlight = await updateHighlight(profileId, id, parsed.data);
 
     reply.send({
       data: highlight,
@@ -272,7 +277,8 @@ export default async function highlightRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = request.params;
 
-    await deleteHighlight(userId, id);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    await deleteHighlight(profileId, id);
 
     reply.send({
       data: null,

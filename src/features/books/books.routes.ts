@@ -26,6 +26,7 @@ import {
 import { profiles } from '../profiles/profiles.schema';
 import { db } from '../../db/index';
 import { eq } from 'drizzle-orm';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export default async function bookRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -129,7 +130,8 @@ export default async function bookRoutes(app: FastifyInstance) {
     const { username, slug } = request.params;
     const { userId } = request.user;
 
-    const book = await getPublicBook(username, slug, userId);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const book = await getPublicBook(username, slug, profileId);
 
     reply.send({
       data: book,
@@ -165,7 +167,8 @@ export default async function bookRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id, chapterId } = request.params;
 
-    await updateProgress(userId, id, chapterId);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    await updateProgress(profileId, id, chapterId);
 
     reply.send({
       data: null,

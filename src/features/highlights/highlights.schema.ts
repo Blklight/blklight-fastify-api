@@ -1,10 +1,10 @@
 import { pgTable, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
-import { users } from '../auth/auth.schema';
+import { profiles } from '../profiles/profiles.schema';
 import { documents } from '../documents/documents.schema';
 
 export const highlights = pgTable('highlights', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  profileId: text('profile_id').notNull().references(() => profiles.id),
   documentId: text('document_id').notNull().references(() => documents.id),
   selection: jsonb('selection').notNull(),
   annotation: jsonb('annotation'),
@@ -14,7 +14,7 @@ export const highlights = pgTable('highlights', {
 
 export const highlightPalette = pgTable('highlight_palette', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().unique().references(() => users.id),
+  profileId: text('profile_id').notNull().unique().references(() => profiles.id),
   colors: jsonb('colors').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
