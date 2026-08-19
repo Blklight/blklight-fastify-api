@@ -4,7 +4,7 @@ import { workspaces, Workspace } from './workspace.schema';
 import { highlights } from '../highlights/highlights.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { journals } from '../journals/journals.schema';
-import { ValidationError } from '../../utils/errors';
+import { ValidationError, NotFoundError } from '../../utils/errors';
 import { NOTE_COLORS } from '../../config/note-colors';
 import type { UpdateColorLabelsInput } from './workspace.zod';
 
@@ -19,14 +19,24 @@ export interface WorkspaceSummary {
 
 /**
  * Get the current user's personal workspace with content counts.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @returns Workspace with note, highlight, and journal counts
  */
-export async function getMyWorkspace(userId: string): Promise<WorkspaceSummary> {
+export async function getMyWorkspace(profileId: string): Promise<WorkspaceSummary> {
+  const [profile] = await db
+    .select({ userId: profiles.userId })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+
+  if (!profile) {
+    throw new NotFoundError('Profile not found');
+  }
+
   const [ws] = await db
     .select()
     .from(workspaces)
-    .where(and(eq(workspaces.ownerId, userId), eq(workspaces.isPersonal, true)))
+    .where(and(eq(workspaces.ownerId, profile.userId), eq(workspaces.isPersonal, true)))
     .limit(1);
 
   if (!ws) {
@@ -42,8 +52,7 @@ export async function getMyWorkspace(userId: string): Promise<WorkspaceSummary> 
   const [highlightsCount] = await db
     .select({ count: count() })
     .from(highlights)
-    .innerJoin(profiles, eq(highlights.profileId, profiles.id))
-    .where(eq(profiles.userId, userId))
+    .where(eq(highlights.profileId, profileId))
     .limit(1);
 
   const [journalsCount] = await db

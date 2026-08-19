@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { updateColorLabelsSchema } from './workspace.zod';
 import { getMyWorkspace, updateColorLabels } from './workspace.service';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export default async function workspaceRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -24,7 +25,8 @@ export default async function workspaceRoutes(app: FastifyInstance) {
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { userId } = request.user;
-    const workspace = await getMyWorkspace(userId);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const workspace = await getMyWorkspace(profileId);
 
     reply.send({
       data: workspace,

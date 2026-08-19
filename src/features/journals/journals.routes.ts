@@ -15,6 +15,7 @@ import {
   removeHighlightFromJournal,
   reorderHighlights,
 } from './journals.service';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export default async function journalRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -308,7 +309,8 @@ export default async function journalRoutes(app: FastifyInstance) {
       });
     }
 
-    const journalHighlight = await addHighlightToJournal(userId, id, parsed.data);
+    const profileId = await resolveProfileIdFromUserId(userId);
+    const journalHighlight = await addHighlightToJournal(profileId, id, parsed.data);
 
     reply.code(201).send({
       data: journalHighlight,

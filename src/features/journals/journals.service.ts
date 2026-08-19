@@ -247,7 +247,7 @@ export async function getJournalById(userId: string, id: string): Promise<Journa
 
 /**
  * Add a highlight to a journal.
- * @param userId - The user's ID
+ * @param profileId - The profile ID
  * @param journalId - The journal ID
  * @param data - Contains highlightId and optional position
  * @returns The created journal_highlight relation
@@ -255,11 +255,21 @@ export async function getJournalById(userId: string, id: string): Promise<Journa
  * @throws ConflictError if highlight already in journal
  */
 export async function addHighlightToJournal(
-  userId: string,
+  profileId: string,
   journalId: string,
   data: AddHighlightInput
 ): Promise<JournalHighlight> {
-  const workspaceId = await resolveWorkspaceId(userId);
+  const [profile] = await db
+    .select({ userId: profiles.userId })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+
+  if (!profile) {
+    throw new NotFoundError('Profile not found');
+  }
+
+  const workspaceId = await resolveWorkspaceId(profile.userId);
 
   const [journal] = await db
     .select()
@@ -274,8 +284,7 @@ export async function addHighlightToJournal(
   const [highlight] = await db
     .select()
     .from(highlights)
-    .innerJoin(profiles, eq(highlights.profileId, profiles.id))
-    .where(and(eq(highlights.id, data.highlightId), eq(profiles.userId, userId)))
+    .where(and(eq(highlights.id, data.highlightId), eq(highlights.profileId, profileId)))
     .limit(1);
 
   if (!highlight) {
