@@ -60,8 +60,31 @@ export default async function authRoutes(app: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                user: { type: 'object' },
                 accessToken: { type: 'string' },
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    role: { type: 'string', enum: ['user', 'admin'] },
+                    emailVerified: { type: 'boolean' },
+                    onboardingComplete: { type: 'boolean' },
+                    createdAt: { type: 'string' },
+                  },
+                },
+                profile: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    userId: { type: 'string' },
+                    username: { type: 'string' },
+                    displayName: { type: ['string', 'null'] },
+                    avatarUrl: { type: ['string', 'null'] },
+                    isPrivate: { type: 'boolean' },
+                  },
+                },
+                apps: { type: 'array', items: { type: 'string' } },
               },
             },
             error: { type: 'null' },
@@ -130,8 +153,31 @@ export default async function authRoutes(app: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                user: { type: 'object' },
                 accessToken: { type: 'string' },
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    role: { type: 'string', enum: ['user', 'admin'] },
+                    emailVerified: { type: 'boolean' },
+                    onboardingComplete: { type: 'boolean' },
+                    createdAt: { type: 'string' },
+                  },
+                },
+                profile: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    userId: { type: 'string' },
+                    username: { type: 'string' },
+                    displayName: { type: ['string', 'null'] },
+                    avatarUrl: { type: ['string', 'null'] },
+                    isPrivate: { type: 'boolean' },
+                  },
+                },
+                apps: { type: 'array', items: { type: 'string' } },
               },
             },
             error: { type: 'null' },
@@ -187,6 +233,30 @@ export default async function authRoutes(app: FastifyInstance) {
               type: 'object',
               properties: {
                 accessToken: { type: 'string' },
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    role: { type: 'string', enum: ['user', 'admin'] },
+                    emailVerified: { type: 'boolean' },
+                    onboardingComplete: { type: 'boolean' },
+                    createdAt: { type: 'string' },
+                  },
+                },
+                profile: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    userId: { type: 'string' },
+                    username: { type: 'string' },
+                    displayName: { type: ['string', 'null'] },
+                    avatarUrl: { type: ['string', 'null'] },
+                    isPrivate: { type: 'boolean' },
+                  },
+                },
+                apps: { type: 'array', items: { type: 'string' } },
               },
             },
             error: { type: 'null' },
