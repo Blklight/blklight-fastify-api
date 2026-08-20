@@ -10,7 +10,7 @@ export async function listApps() {
     .where(eq(platformApps.isActive, true));
 }
 
-export async function getUserApps(userId: string) {
+export async function getUserApps(profileId: string) {
   return db
     .select({
       id: userApps.id,
@@ -22,10 +22,10 @@ export async function getUserApps(userId: string) {
     })
     .from(userApps)
     .innerJoin(platformApps, eq(userApps.appId, platformApps.id))
-    .where(eq(userApps.userId, userId));
+    .where(eq(userApps.profileId, profileId));
 }
 
-export async function activateApps(userId: string, appSlugs: string[]) {
+export async function activateApps(profileId: string, appSlugs: string[]) {
   if (appSlugs.length === 0) {
     throw new Error('No apps provided');
   }
@@ -46,7 +46,7 @@ export async function activateApps(userId: string, appSlugs: string[]) {
 
   const userAppRows: NewUserApp[] = appSlugs.map(slug => ({
     id: createId(),
-    userId,
+    profileId,
     appId: appIdsBySlug.get(slug)!,
     activatedAt: new Date(),
   }));
@@ -56,20 +56,20 @@ export async function activateApps(userId: string, appSlugs: string[]) {
       .insert(userApps)
       .values(row)
       .onConflictDoUpdate({
-        target: [userApps.userId, userApps.appId],
+        target: [userApps.profileId, userApps.appId],
         set: { activatedAt: new Date() },
       });
   }
 }
 
-export async function deactivateApp(userId: string, appId: string) {
+export async function deactivateApp(profileId: string, appId: string) {
   const [existing] = await db
     .select()
     .from(userApps)
     .where(eq(userApps.id, appId))
     .limit(1);
 
-  if (!existing || existing.userId !== userId) {
+  if (!existing || existing.profileId !== profileId) {
     throw new Error('App not found or not owned by user');
   }
 

@@ -1,5 +1,5 @@
 import { pgTable, text, timestamp, boolean, unique } from 'drizzle-orm/pg-core';
-import { users } from '../auth/auth.schema';
+import { profiles } from '../profiles/profiles.schema';
 
 export const platformApps = pgTable('platform_apps', {
   id: text('id').primaryKey(),
@@ -12,11 +12,11 @@ export const platformApps = pgTable('platform_apps', {
 
 export const userApps = pgTable('user_apps', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
+  profileId: text('profile_id').notNull().references(() => profiles.id),
   appId: text('app_id').notNull().references(() => platformApps.id),
   activatedAt: timestamp('activated_at').defaultNow().notNull(),
 }, (table) => ({
-  userAppUnique: unique().on(table.userId, table.appId),
+  profileAppUnique: unique().on(table.profileId, table.appId),
 }));
 
 export type PlatformApp = typeof platformApps.$inferSelect;

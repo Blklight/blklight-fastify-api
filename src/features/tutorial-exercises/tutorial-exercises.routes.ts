@@ -7,9 +7,7 @@ import {
   getExercises,
   submitAnswer,
 } from './tutorial-exercises.service';
-import { profiles } from '../profiles/profiles.schema';
-import { db } from '../../db/index';
-import { eq } from 'drizzle-orm';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 import { requireFeature } from '../../config/features';
 
 interface JwtPayload {
@@ -29,15 +27,6 @@ declare module '@fastify/jwt' {
     payload: JwtPayload;
     user: JwtPayload;
   }
-}
-
-async function getProfileId(app: FastifyInstance, userId: string): Promise<string | null> {
-  const result = await db
-    .select()
-    .from(profiles)
-    .where(eq(profiles.userId, userId))
-    .limit(1);
-  return result.length > 0 ? result[0]!.id : null;
 }
 
 export default async function tutorialExerciseRoutes(app: FastifyInstance) {
@@ -142,14 +131,7 @@ export default async function tutorialExerciseRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = request.params;
 
-    const profileId = await getProfileId(app, userId);
-    if (!profileId) {
-      return reply.code(404).send({
-        data: null,
-        error: { code: 'NOT_FOUND', message: 'Profile not found' },
-        message: 'Profile not found',
-      });
-    }
+    const profileId = await resolveProfileIdFromUserId(userId);
 
     const parsed = createExerciseSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -236,14 +218,7 @@ export default async function tutorialExerciseRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = request.params;
 
-    const profileId = await getProfileId(app, userId);
-    if (!profileId) {
-      return reply.code(404).send({
-        data: null,
-        error: { code: 'NOT_FOUND', message: 'Profile not found' },
-        message: 'Profile not found',
-      });
-    }
+    const profileId = await resolveProfileIdFromUserId(userId);
 
     const parsed = updateExerciseSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -295,14 +270,7 @@ export default async function tutorialExerciseRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = request.params;
 
-    const profileId = await getProfileId(app, userId);
-    if (!profileId) {
-      return reply.code(404).send({
-        data: null,
-        error: { code: 'NOT_FOUND', message: 'Profile not found' },
-        message: 'Profile not found',
-      });
-    }
+    const profileId = await resolveProfileIdFromUserId(userId);
 
     await deleteExercise(profileId, id);
 
@@ -367,6 +335,8 @@ export default async function tutorialExerciseRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = request.params;
 
+    const profileId = await resolveProfileIdFromUserId(userId);
+
     const parsed = submitAnswerSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -382,7 +352,7 @@ export default async function tutorialExerciseRoutes(app: FastifyInstance) {
       });
     }
 
-    const result = await submitAnswer(userId, id, parsed.data);
+    const result = await submitAnswer(profileId, id, parsed.data);
 
     reply.send({
       data: result,

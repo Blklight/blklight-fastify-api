@@ -3,36 +3,13 @@ import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { tutorialExercises, exerciseSubmissions, TutorialExercise } from './tutorial-exercises.schema';
 import { documents, documentTypes } from '../documents/documents.schema';
-import { profiles } from '../profiles/profiles.schema';
 import { executeCode, type SupportedLanguage } from '../../utils/sandbox';
 import { NotFoundError, UnauthorizedError, ValidationError } from '../../utils/errors';
 import type { CreateExerciseInput, UpdateExerciseInput, SubmitAnswerInput } from './tutorial-exercises.zod';
 
-interface CodeExerciseData {
-  prompt: string;
-  language: SupportedLanguage;
-  initialCode: string;
-  expectedOutput: string;
-}
-
-interface QuizExerciseData {
-  question: string;
-  options: string[];
-  correctIndex: number;
-}
-
 export interface SubmissionResult {
   isCorrect: boolean;
   attemptsCount: number;
-}
-
-async function getProfileIdByUserId(userId: string): Promise<string | null> {
-  const result = await db
-    .select()
-    .from(profiles)
-    .where(eq(profiles.userId, userId))
-    .limit(1);
-  return result.length > 0 ? result[0]!.id : null;
 }
 
 async function getDocumentAuthorId(documentId: string): Promise<string | null> {
@@ -228,14 +205,14 @@ export async function getExercises(documentId: string): Promise<unknown[]> {
 
 /**
  * Submit an answer to an exercise.
- * @param userId - The user's ID
+ * @param profileId - The profile ID of the submitting user
  * @param exerciseId - The exercise ID
  * @param submission - The answer submission
  * @returns Result indicating if the answer is correct and attempt count
  * @throws NotFoundError if exercise not found
  */
 export async function submitAnswer(
-  userId: string,
+  profileId: string,
   exerciseId: string,
   submission: SubmitAnswerInput
 ): Promise<SubmissionResult> {
@@ -275,7 +252,7 @@ export async function submitAnswer(
     .from(exerciseSubmissions)
     .where(
       and(
-        eq(exerciseSubmissions.userId, userId),
+        eq(exerciseSubmissions.profileId, profileId),
         eq(exerciseSubmissions.exerciseId, exerciseId)
       )
     )
@@ -296,7 +273,7 @@ export async function submitAnswer(
 
   const newSubmission = {
     id: createId(),
-    userId,
+    profileId,
     exerciseId,
     attempts: [attempt],
     createdAt: new Date(),

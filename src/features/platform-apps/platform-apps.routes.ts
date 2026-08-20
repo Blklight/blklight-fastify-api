@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { z } from 'zod';
 import { listApps, getUserApps, activateApps, deactivateApp } from './platform-apps.service';
 import { activateAppsSchema } from './platform-apps.zod';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export default async function platformAppsRoutes(app: FastifyInstance) {
   app.get('/platform-apps', {
@@ -46,8 +46,8 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const userId = request.user.userId;
-    const userAppsList = await getUserApps(userId);
+    const profileId = await resolveProfileIdFromUserId(request.user.userId);
+    const userAppsList = await getUserApps(profileId);
 
     reply.send({
       data: userAppsList,
@@ -85,7 +85,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const userId = request.user.userId;
+    const profileId = await resolveProfileIdFromUserId(request.user.userId);
     const parsed = activateAppsSchema.safeParse(request.body);
 
     if (!parsed.success) {
@@ -102,7 +102,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
       });
     }
 
-    await activateApps(userId, parsed.data.apps);
+    await activateApps(profileId, parsed.data.apps);
 
     reply.send({
       data: null,
@@ -135,11 +135,11 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const userId = request.user.userId;
+    const profileId = await resolveProfileIdFromUserId(request.user.userId);
     const { appId } = request.params as { appId: string };
 
     try {
-      await deactivateApp(userId, appId);
+      await deactivateApp(profileId, appId);
     } catch (err) {
       return reply.code(404).send({
         data: null,

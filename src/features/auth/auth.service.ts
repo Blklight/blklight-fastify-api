@@ -35,7 +35,7 @@ export async function buildAuthSession(
   userId: string,
   accessToken: string
 ): Promise<AuthSession> {
-  const [userRow, profileRow, userApps] = await Promise.all([
+  const [userRow, profileRow] = await Promise.all([
     db.select().from(users).where(eq(users.id, userId)).limit(1),
     db
       .select({
@@ -49,7 +49,6 @@ export async function buildAuthSession(
       .from(profiles)
       .where(eq(profiles.userId, userId))
       .limit(1),
-    getUserApps(userId),
   ]);
 
   const user = userRow[0];
@@ -58,6 +57,9 @@ export async function buildAuthSession(
   }
 
   const profile = profileRow[0];
+  const profileId = profile?.id;
+
+  const userApps = profileId ? await getUserApps(profileId) : [];
 
   return {
     accessToken,
