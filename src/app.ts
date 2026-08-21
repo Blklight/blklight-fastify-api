@@ -31,6 +31,7 @@ import platformAppsRoutes from './features/platform-apps/platform-apps.routes';
 import canvasRoutes from './features/canvas/canvas.routes';
 import memoryRoutes from './features/memory/memory.routes';
 import chatRoutes from './features/chat/chat.routes';
+import adminRoutes from './features/admin/admin.routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -197,6 +198,7 @@ export async function buildApp() {
   await app.register(canvasRoutes, { prefix: '/api/v1' });
   await app.register(memoryRoutes, { prefix: '/api/v1' });
   await app.register(chatRoutes, { prefix: '/api/v1' });
+  await app.register(adminRoutes, { prefix: '/api/v1' });
 
   const startTime = Date.now();
   app.get('/health', async (_request, _reply) => ({
