@@ -1,9 +1,12 @@
 node_modules/
 dist/
 .env*
+!.env.example
 drizzle/
 *.log
 .DS_Store
 coverage/
 .nyc_output/
 .study/
+ADMIN_ROUTES.md
+opencode-session.txt
