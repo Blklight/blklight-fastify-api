@@ -2,6 +2,8 @@ import { db } from './index';
 import { categories } from '../features/categories/categories.schema';
 import { tags as tagsTable } from '../features/tags/tags.schema';
 import { platformApps } from '../features/platform-apps/platform-apps.schema';
+import { users } from '../features/auth/auth.schema';
+import { createUser } from '../features/auth/auth.service';
 import { createId } from '@paralleldrive/cuid2';
 import { env } from '../config/env';
 import { eq } from 'drizzle-orm';
@@ -750,11 +752,40 @@ async function seedPlatformApps() {
   console.log(`Seeded ${platformAppsData.length} platform apps`);
 }
 
+async function seedAdminUser() {
+  const email = env.ADMIN_EMAIL;
+  const password = env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    console.log('Admin bootstrap skipped (ADMIN_EMAIL/ADMIN_PASSWORD not set)');
+    return;
+  }
+
+  const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  if (existing.length > 0) {
+    console.log(`Admin user ${email} already exists — skipping`);
+    return;
+  }
+
+  const username = email.split('@')[0]!;
+  const { user } = await createUser(email, username, password);
+
+  await db.update(users).set({
+    role: 'admin',
+    emailVerified: true,
+    onboardingComplete: true,
+    updatedAt: new Date(),
+  }).where(eq(users.id, user.id));
+
+  console.log(`Admin user created: ${email} (role: admin)`);
+}
+
 async function main() {
   try {
     console.log('Starting seed...');
     console.log(`Database: ${env.DATABASE_URL.split('@')[1]}`);
 
+    await seedAdminUser();
     await seedCategories();
     await seedTags();
     await seedPlatformApps();
