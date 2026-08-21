@@ -222,6 +222,34 @@ export async function listMyServers(userId: string): Promise<ChatServer[]> {
 }
 
 /**
+ * List all chat servers (admin only — no membership filter).
+ * Includes accepted member count per server.
+ * @returns All servers with member counts
+ */
+export async function listAllServers(): Promise<Array<ChatServer & { memberCount: number }>> {
+  return db
+    .select({
+      id: chatServers.id,
+      name: chatServers.name,
+      slug: chatServers.slug,
+      ownerId: chatServers.ownerId,
+      iconUrl: chatServers.iconUrl,
+      createdAt: chatServers.createdAt,
+      memberCount: sql<number>`count(${chatServerMembers.id})::int`,
+    })
+    .from(chatServers)
+    .leftJoin(
+      chatServerMembers,
+      and(
+        eq(chatServers.id, chatServerMembers.serverId),
+        eq(chatServerMembers.status, 'accepted')
+      )
+    )
+    .groupBy(chatServers.id)
+    .orderBy(desc(chatServers.createdAt));
+}
+
+/**
  * Get a server with its channels.
  * @param userId - The user's ID
  * @param serverId - The server ID
@@ -331,6 +359,34 @@ export async function listMembers(userId: string, serverId: string): Promise<Ser
     .orderBy(asc(chatServerMembers.requestedAt));
 
   return isManager ? rows : rows.filter((r) => r.status === 'accepted');
+}
+
+/**
+ * List members of a server with admin bypass (admin only).
+ * Skips membership check — returns all members including pending.
+ * @param serverId - The server ID
+ * @returns All members with profile info
+ */
+export async function listMembersAdminBypass(serverId: string): Promise<ServerMemberItem[]> {
+  await assertServerExists(serverId);
+
+  return db
+    .select({
+      id: chatServerMembers.id,
+      profileId: chatServerMembers.profileId,
+      role: chatServerMembers.role,
+      status: chatServerMembers.status,
+      invitedBy: chatServerMembers.invitedBy,
+      requestedAt: chatServerMembers.requestedAt,
+      decidedAt: chatServerMembers.decidedAt,
+      username: profiles.username,
+      displayName: profiles.displayName,
+      avatarUrl: profiles.avatarUrl,
+    })
+    .from(chatServerMembers)
+    .innerJoin(profiles, eq(chatServerMembers.profileId, profiles.id))
+    .where(eq(chatServerMembers.serverId, serverId))
+    .orderBy(asc(chatServerMembers.requestedAt));
 }
 
 /**

@@ -11,9 +11,11 @@ import {
 import {
   createServer,
   listMyServers,
+  listAllServers,
   getServerDetail,
   addMember,
   listMembers,
+  listMembersAdminBypass,
   decideMember,
   removeMember,
   createChannel,
@@ -157,6 +159,25 @@ export default async function chatRoutes(app: FastifyInstance) {
     });
   });
 
+  app.get('/chat/servers/all', {
+    preHandler: [
+      (request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply),
+      requireAdmin,
+    ],
+    schema: {
+      summary: 'List all chat servers with member counts (admin only)',
+      tags: ['chat', 'admin'],
+    },
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
+    const servers = await listAllServers();
+
+    reply.send({
+      data: servers,
+      error: null,
+      message: 'All chat servers retrieved',
+    });
+  });
+
   app.get('/chat/servers/:serverId', {
     preHandler: [(request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)],
     schema: {
@@ -266,7 +287,10 @@ export default async function chatRoutes(app: FastifyInstance) {
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { serverId } = request.params as ServerParams;
-    const members = await listMembers(request.user.userId, serverId);
+    const isAdmin = request.user.role === 'admin';
+    const members = isAdmin
+      ? await listMembersAdminBypass(serverId)
+      : await listMembers(request.user.userId, serverId);
 
     reply.send({
       data: members,
