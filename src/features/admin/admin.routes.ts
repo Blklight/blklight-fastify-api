@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import { getAdminOverview } from './admin.service';
+import { getAdminOverview, listUsers, getUserDetail, updateUserRole } from './admin.service';
+import { listUsersQuerySchema, updateRoleSchema } from './admin.zod';
 import { requireAdmin } from '../../hooks/admin-guard';
 
 export default async function adminRoutes(app: FastifyInstance) {
@@ -20,5 +21,160 @@ export default async function adminRoutes(app: FastifyInstance) {
       error: null,
       message: 'Overview retrieved successfully',
     });
+  });
+
+  app.get('/admin/users', {
+    preHandler: [
+      (request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply),
+      requireAdmin,
+    ],
+    schema: {
+      summary: 'List users with filters (admin only)',
+      tags: ['admin'],
+      querystring: {
+        type: 'object',
+        properties: {
+          search: { type: 'string' },
+          role: { type: 'string', enum: ['user', 'admin'] },
+          page: { type: 'integer', minimum: 1, default: 1 },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          deleted: { type: 'string', enum: ['true', 'false'], default: 'false' },
+        },
+        additionalProperties: false,
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = listUsersQuerySchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const result = await listUsers(parsed.data);
+
+    reply.send({
+      data: result,
+      error: null,
+      message: 'Users retrieved successfully',
+    });
+  });
+
+  app.get('/admin/users/:id', {
+    preHandler: [
+      (request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply),
+      requireAdmin,
+    ],
+    schema: {
+      summary: 'Get user detail (admin only)',
+      tags: ['admin'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
+
+    try {
+      const detail = await getUserDetail(id);
+
+      reply.send({
+        data: detail,
+        error: null,
+        message: 'User detail retrieved successfully',
+      });
+    } catch (err) {
+      if ((err as Error).message === 'User not found') {
+        return reply.code(404).send({
+          data: null,
+          error: { code: 'NOT_FOUND', message: 'User not found' },
+          message: 'User not found',
+        });
+      }
+      throw err;
+    }
+  });
+
+  app.patch('/admin/users/:id/role', {
+    preHandler: [
+      (request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply),
+      requireAdmin,
+    ],
+    schema: {
+      summary: 'Update user role (admin only)',
+      tags: ['admin'],
+      params: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+        },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', enum: ['user', 'admin'] },
+        },
+        required: ['role'],
+        additionalProperties: false,
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
+    const parsed = updateRoleSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    try {
+      const result = await updateUserRole(id, parsed.data.role);
+
+      reply.send({
+        data: result,
+        error: null,
+        message: 'Role updated successfully',
+      });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg === 'User not found') {
+        return reply.code(404).send({
+          data: null,
+          error: { code: 'NOT_FOUND', message: 'User not found' },
+          message: 'User not found',
+        });
+      }
+      if (msg === 'Role unchanged') {
+        return reply.send({
+          data: { message: 'Role unchanged' },
+          error: null,
+          message: 'Role unchanged',
+        });
+      }
+      throw err;
+    }
   });
 }
