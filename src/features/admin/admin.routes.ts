@@ -12,6 +12,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Admin dashboard overview (admin only)',
       tags: ['admin'],
+      security: [{ bearerAuth: [] }],
     },
   }, async (_request: FastifyRequest, reply: FastifyReply) => {
     const overview = await getAdminOverview();
@@ -31,6 +32,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     schema: {
       summary: 'List users with filters (admin only)',
       tags: ['admin'],
+      security: [{ bearerAuth: [] }],
       querystring: {
         type: 'object',
         properties: {
@@ -77,6 +79,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Get user detail (admin only)',
       tags: ['admin'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
@@ -116,6 +119,7 @@ export default async function adminRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Update user role (admin only)',
       tags: ['admin'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {

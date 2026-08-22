@@ -167,6 +167,7 @@ export default async function chatRoutes(app: FastifyInstance) {
     schema: {
       summary: 'List all chat servers with member counts (admin only)',
       tags: ['chat', 'admin'],
+      security: [{ bearerAuth: [] }],
     },
   }, async (_request: FastifyRequest, reply: FastifyReply) => {
     const servers = await listAllServers();

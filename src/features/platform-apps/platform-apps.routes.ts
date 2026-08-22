@@ -35,6 +35,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'List apps activated by current user',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       response: {
         200: {
           type: 'object',
@@ -62,6 +63,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Activate apps for current user',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
         properties: {
@@ -117,6 +119,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Deactivate an app',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
@@ -164,6 +167,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Create a new platform app (admin only)',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       body: {
         type: 'object',
         properties: {
@@ -213,6 +217,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Update a platform app (admin only)',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
@@ -269,6 +274,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'Authorize a profile for a beta app (admin only)',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
@@ -321,6 +327,7 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
     schema: {
       summary: 'List invites for a beta app (admin only)',
       tags: ['platform-apps'],
+      security: [{ bearerAuth: [] }],
       params: {
         type: 'object',
         properties: {
