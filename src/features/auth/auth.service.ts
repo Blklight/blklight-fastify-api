@@ -231,7 +231,8 @@ export async function completeOnboarding(userId: string): Promise<User> {
     .limit(1);
 
   if (existingProfile.length > 0) {
-    return user;
+    await db.update(users).set({ onboardingComplete: true, updatedAt: new Date() }).where(eq(users.id, userId));
+    return { ...user, onboardingComplete: true };
   }
 
   const now = new Date();
@@ -283,6 +284,8 @@ export async function completeOnboarding(userId: string): Promise<User> {
       createdAt: now,
       updatedAt: now,
     });
+
+    await tx.update(users).set({ onboardingComplete: true, updatedAt: now }).where(eq(users.id, userId));
   });
 
   if (features.email) {
