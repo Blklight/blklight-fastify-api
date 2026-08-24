@@ -331,9 +331,31 @@ export default async function authRoutes(app: FastifyInstance) {
               type: 'object',
               properties: {
                 step: { type: 'string' },
-                user: { type: 'object' },
-                profile: { type: 'object' },
-                apps: { type: 'array' },
+                user: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    email: { type: 'string' },
+                    username: { type: 'string' },
+                    role: { type: 'string' },
+                    emailVerified: { type: 'boolean' },
+                    onboardingComplete: { type: 'boolean' },
+                    createdAt: { type: 'string' },
+                    hasPassword: { type: 'boolean' },
+                  },
+                },
+                profile: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    userId: { type: 'string' },
+                    username: { type: 'string' },
+                    displayName: { type: ['string', 'null'] },
+                    avatarUrl: { type: ['string', 'null'] },
+                    isPrivate: { type: 'boolean' },
+                  },
+                },
+                apps: { type: 'array', items: { type: 'string' } },
               },
             },
             error: { type: 'null' },
@@ -359,20 +381,21 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const dummyToken = '';
-    const authSession = await buildAuthSession(userId, dummyToken);
+    const authSession = await buildAuthSession(userId, '');
     const step = getOnboardingStep({
       username: userRow.username,
       onboardingComplete: userRow.onboardingComplete,
       passwordHash: userRow.passwordHash,
     });
 
+    const { accessToken: _, ...sessionWithoutToken } = authSession;
+
     reply.send({
       data: {
         step,
-        ...authSession,
+        ...sessionWithoutToken,
         user: {
-          ...authSession.user,
+          ...sessionWithoutToken.user,
           hasPassword: userRow.passwordHash !== null,
         },
       },
