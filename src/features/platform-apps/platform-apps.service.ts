@@ -12,6 +12,13 @@ export async function listApps() {
     .where(eq(platformApps.isActive, true));
 }
 
+export async function listAllApps() {
+  return db
+    .select()
+    .from(platformApps)
+    .orderBy(platformApps.createdAt);
+}
+
 export async function getUserApps(profileId: string) {
   return db
     .select({
@@ -243,4 +250,5 @@ export async function listInvites(appId: string) {
 }
 
 export type ListAppsResult = Awaited<ReturnType<typeof listApps>>;
+export type ListAllAppsResult = Awaited<ReturnType<typeof listAllApps>>;
 export type GetUserAppsResult = Awaited<ReturnType<typeof getUserApps>>;

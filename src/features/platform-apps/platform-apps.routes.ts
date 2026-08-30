@@ -13,7 +13,24 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'array' },
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  slug: { type: 'string' },
+                  name: { type: 'string' },
+                  description: { type: ['string', 'null'] },
+                  accessMode: { type: 'string' },
+                  iconUrl: { type: ['string', 'null'] },
+                  tagline: { type: ['string', 'null'] },
+                  category: { type: ['string', 'null'] },
+                  isActive: { type: 'boolean' },
+                  createdAt: { type: 'string' },
+                },
+              },
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },
@@ -40,7 +57,20 @@ export default async function platformAppsRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'array' },
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  appId: { type: 'string' },
+                  activatedAt: { type: 'string' },
+                  slug: { type: 'string' },
+                  name: { type: 'string' },
+                  description: { type: ['string', 'null'] },
+                },
+              },
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },

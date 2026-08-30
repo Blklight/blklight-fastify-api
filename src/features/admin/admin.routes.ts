@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { getAdminOverview, listUsers, getUserDetail, updateUserRole } from './admin.service';
+import { listAllApps } from '../platform-apps/platform-apps.service';
 import { listUsersQuerySchema, updateRoleSchema } from './admin.zod';
 import { requireAdmin } from '../../hooks/admin-guard';
 
@@ -68,6 +69,53 @@ export default async function adminRoutes(app: FastifyInstance) {
       data: result,
       error: null,
       message: 'Users retrieved successfully',
+    });
+  });
+
+  app.get('/admin/platform-apps', {
+    preHandler: [
+      (request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply),
+      requireAdmin,
+    ],
+    schema: {
+      summary: 'List all platform apps (admin only, includes inactive)',
+      tags: ['admin'],
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            data: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  slug: { type: 'string' },
+                  name: { type: 'string' },
+                  description: { type: ['string', 'null'] },
+                  accessMode: { type: 'string' },
+                  iconUrl: { type: ['string', 'null'] },
+                  tagline: { type: ['string', 'null'] },
+                  category: { type: ['string', 'null'] },
+                  isActive: { type: 'boolean' },
+                  createdAt: { type: 'string' },
+                },
+              },
+            },
+            error: { type: 'null' },
+            message: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (_request: FastifyRequest, reply: FastifyReply) => {
+    const apps = await listAllApps();
+
+    reply.send({
+      data: apps,
+      error: null,
+      message: 'All platform apps retrieved successfully',
     });
   });
 
