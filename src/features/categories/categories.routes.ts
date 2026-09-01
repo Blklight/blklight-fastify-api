@@ -9,6 +9,50 @@ import {
 } from './categories.service';
 import { requireAdmin } from '../../hooks/admin-guard';
 
+const CATEGORY_BASE_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    slug: { type: 'string' },
+    description: { type: ['string', 'null'] },
+    parentId: { type: ['string', 'null'] },
+    createdAt: { type: 'string' },
+  },
+};
+
+const CATEGORY_SCHEMA = {
+  type: 'object',
+  properties: {
+    ...CATEGORY_BASE_SCHEMA.properties,
+  },
+};
+
+const CATEGORY_WITH_CHILDREN_DEF = {
+  $id: 'CategoryWithChildren',
+  type: 'object',
+  properties: {
+    ...CATEGORY_BASE_SCHEMA.properties,
+    documentCount: { type: 'number' },
+    children: {
+      type: 'array',
+      items: { $ref: 'CategoryWithChildren#' },
+    },
+  },
+};
+
+const CATEGORY_WITH_CHILDREN_ROW = {
+  type: 'object',
+  properties: {
+    ...CATEGORY_BASE_SCHEMA.properties,
+    documentCount: { type: 'number' },
+    children: {
+      type: 'array',
+      items: { $ref: 'CategoryWithChildren#' },
+    },
+  },
+};
+
 const createCategorySchema = z.object({
   name: z.string().min(1).max(50),
   description: z.string().max(200).nullable().optional(),
@@ -30,9 +74,15 @@ export default async function categoryRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'array' },
+            data: {
+              type: 'array',
+              items: CATEGORY_WITH_CHILDREN_ROW,
+            },
             error: { type: 'null' },
             message: { type: 'string' },
+          },
+          definitions: {
+            CategoryWithChildren: CATEGORY_WITH_CHILDREN_DEF,
           },
         },
       },
@@ -62,9 +112,12 @@ export default async function categoryRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: CATEGORY_WITH_CHILDREN_ROW,
             error: { type: 'null' },
             message: { type: 'string' },
+          },
+          definitions: {
+            CategoryWithChildren: CATEGORY_WITH_CHILDREN_DEF,
           },
         },
         400: {
@@ -115,7 +168,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         201: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: CATEGORY_SCHEMA,
             error: { type: 'null' },
             message: { type: 'string' },
           },
@@ -185,7 +238,7 @@ export default async function categoryRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: CATEGORY_SCHEMA,
             error: { type: 'null' },
             message: { type: 'string' },
           },
