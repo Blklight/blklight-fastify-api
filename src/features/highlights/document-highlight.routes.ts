@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createHighlightSchema } from './highlights.zod';
 import { createHighlight, getDocumentHighlights } from './highlights.service';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export default async function documentHighlightRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -84,7 +85,9 @@ export default async function documentHighlightRoutes(app: FastifyInstance) {
       });
     }
 
-    const highlight = await createHighlight(userId, parsed.data);
+    const profileId = await resolveProfileIdFromUserId(userId);
+
+    const highlight = await createHighlight(profileId, parsed.data);
 
     reply.code(201).send({
       data: highlight,
@@ -119,7 +122,9 @@ export default async function documentHighlightRoutes(app: FastifyInstance) {
     const { userId } = request.user;
     const { id } = request.params;
 
-    const highlights = await getDocumentHighlights(userId, id);
+    const profileId = await resolveProfileIdFromUserId(userId);
+
+    const highlights = await getDocumentHighlights(profileId, id);
 
     reply.send({
       data: highlights,
