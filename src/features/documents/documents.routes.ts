@@ -14,6 +14,148 @@ import { db } from '../../db/index';
 import { eq } from 'drizzle-orm';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 
+const AUTHOR_SCHEMA = {
+  type: 'object',
+  properties: {
+    username: { type: 'string' },
+    displayName: { type: ['string', 'null'] },
+    avatarUrl: { type: ['string', 'null'] },
+  },
+};
+
+const CATEGORY_REF_SCHEMA = {
+  type: ['object', 'null'],
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    slug: { type: 'string' },
+  },
+};
+
+const TAG_REF_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    slug: { type: 'string' },
+  },
+};
+
+const STYLE_SCHEMA = {
+  type: 'object',
+  properties: {
+    typography: { type: 'string' },
+    paperStyle: { type: ['object', 'null'], additionalProperties: true },
+    paperTexture: { type: ['object', 'null'], additionalProperties: true },
+    coverSettings: { type: ['object', 'null'], additionalProperties: true },
+    documentHeader: { type: ['object', 'null'], additionalProperties: true },
+    documentFooter: { type: ['object', 'null'], additionalProperties: true },
+    documentSignature: { type: ['object', 'null'], additionalProperties: true },
+  },
+};
+
+const AUTHORSHIP_SCHEMA = {
+  type: ['object', 'null'],
+  additionalProperties: true,
+  properties: {
+    authorName: { type: 'string' },
+    username: { type: 'string' },
+    userHash: { type: 'string' },
+    documentHash: { type: 'string' },
+    publicIdentifier: { type: 'string' },
+    hmac: { type: 'string' },
+    signedAt: { type: 'string' },
+  },
+};
+
+const DOCUMENT_CARD_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    title: { type: 'string' },
+    abstract: { type: ['string', 'null'] },
+    coverImageUrl: { type: ['string', 'null'] },
+    slug: { type: 'string' },
+    publishedAt: { type: 'string' },
+    typeName: { type: 'string' },
+    author: AUTHOR_SCHEMA,
+    authorship: {
+      type: 'object',
+      properties: {
+        publicIdentifier: { type: 'string' },
+      },
+    },
+    likesCount: { type: 'number' },
+    category: CATEGORY_REF_SCHEMA,
+    tags: { type: 'array', items: TAG_REF_SCHEMA },
+  },
+};
+
+const DOCUMENT_SUMMARY_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    title: { type: 'string' },
+    abstract: { type: ['string', 'null'] },
+    status: { type: 'string' },
+    typeName: { type: 'string' },
+    slug: { type: 'string' },
+    coverImageUrl: { type: ['string', 'null'] },
+    authorship: AUTHORSHIP_SCHEMA,
+    publishedAt: { type: ['string', 'null'] },
+    updatedAt: { type: 'string' },
+    createdAt: { type: 'string' },
+  },
+};
+
+const DOCUMENT_FULL_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    title: { type: 'string' },
+    abstract: { type: ['string', 'null'] },
+    content: { type: ['object', 'null'], additionalProperties: true },
+    coverImageUrl: { type: ['string', 'null'] },
+    slug: { type: 'string' },
+    publishedAt: { type: 'string' },
+    typeName: { type: 'string' },
+    author: AUTHOR_SCHEMA,
+    style: STYLE_SCHEMA,
+    authorship: AUTHORSHIP_SCHEMA,
+    likes: {
+      type: 'object',
+      properties: {
+        likesCount: { type: 'number' },
+        likedByMe: { type: ['boolean', 'null'] },
+      },
+    },
+    category: CATEGORY_REF_SCHEMA,
+    tags: { type: 'array', items: TAG_REF_SCHEMA },
+    exercises: { type: 'array', items: { type: 'object', additionalProperties: true } },
+  },
+};
+
+const DOCUMENT_WITH_STYLE_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    authorId: { type: 'string' },
+    typeId: { type: 'string' },
+    typeName: { type: 'string' },
+    status: { type: 'string' },
+    title: { type: 'string' },
+    abstract: { type: ['string', 'null'] },
+    content: { type: ['object', 'null'], additionalProperties: true },
+    coverImageUrl: { type: ['string', 'null'] },
+    slug: { type: 'string' },
+    authorship: AUTHORSHIP_SCHEMA,
+    publishedAt: { type: ['string', 'null'] },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+    style: STYLE_SCHEMA,
+  },
+};
+
 interface JwtPayload {
   userId: string;
   email: string;
@@ -56,7 +198,10 @@ export default async function documentRoutes(app: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
-                items: { type: 'array' },
+                items: {
+                  type: 'array',
+                  items: DOCUMENT_CARD_SCHEMA,
+                },
                 nextCursor: { type: ['string', 'null'] },
                 total: { type: 'number' },
               },
@@ -109,7 +254,7 @@ export default async function documentRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: DOCUMENT_FULL_SCHEMA,
             error: { type: 'null' },
             message: { type: 'string' },
           },
@@ -155,7 +300,10 @@ export default async function documentRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'array' },
+            data: {
+              type: 'array',
+              items: DOCUMENT_SUMMARY_SCHEMA,
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },
@@ -210,7 +358,7 @@ export default async function documentRoutes(app: FastifyInstance) {
         201: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: DOCUMENT_WITH_STYLE_SCHEMA,
             error: { type: 'null' },
             message: { type: 'string' },
           },
@@ -292,7 +440,7 @@ export default async function documentRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: DOCUMENT_WITH_STYLE_SCHEMA,
             error: { type: 'null' },
             message: { type: 'string' },
           },
@@ -358,7 +506,7 @@ export default async function documentRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: DOCUMENT_WITH_STYLE_SCHEMA,
             error: { type: 'null' },
             message: { type: 'string' },
           },

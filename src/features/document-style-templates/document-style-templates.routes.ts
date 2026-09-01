@@ -9,6 +9,22 @@ import {
   deleteStyleTemplate,
 } from './document-style-templates.service';
 
+const STYLE_TEMPLATE_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    authorId: { type: 'string' },
+    name: { type: 'string' },
+    documentType: { type: ['string', 'null'] },
+    typography: { type: 'string' },
+    paperStyle: { type: ['object', 'null'], additionalProperties: true },
+    paperTexture: { type: ['object', 'null'], additionalProperties: true },
+    documentHeader: { type: ['object', 'null'], additionalProperties: true },
+    documentFooter: { type: ['object', 'null'], additionalProperties: true },
+    createdAt: { type: 'string' },
+  },
+};
+
 interface JwtPayload {
   userId: string;
   email: string;
@@ -47,7 +63,10 @@ export default async function styleTemplateRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'array' },
+            data: {
+              type: 'array',
+              items: STYLE_TEMPLATE_SCHEMA,
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },
