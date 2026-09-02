@@ -434,6 +434,7 @@ export default async function documentRoutes(app: FastifyInstance) {
           coverSettings: { type: 'object' },
           documentHeader: { type: 'object' },
           documentFooter: { type: 'object' },
+          documentSignature: { type: 'object' },
         },
       },
       response: {

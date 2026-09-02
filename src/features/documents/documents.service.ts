@@ -281,6 +281,9 @@ export async function updateDocument(
   if (data.documentFooter !== undefined) {
     styleUpdates.documentFooter = data.documentFooter;
   }
+  if (data.documentSignature !== undefined) {
+    styleUpdates.documentSignature = data.documentSignature;
+  }
 
   await db.transaction(async (tx) => {
     await tx.update(documents).set(updates).where(eq(documents.id, documentId));

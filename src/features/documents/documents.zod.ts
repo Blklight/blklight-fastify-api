@@ -23,6 +23,7 @@ export const updateDocumentSchema = z.object({
   coverSettings: z.record(z.string(), z.unknown()).nullable().optional(),
   documentHeader: z.record(z.string(), z.unknown()).nullable().optional(),
   documentFooter: z.record(z.string(), z.unknown()).nullable().optional(),
+  documentSignature: z.record(z.string(), z.unknown()).nullable().optional(),
   categoryId: z.string().cuid2().nullable().optional(),
   tags: z.array(z.string().max(30)).max(5).optional(),
 });
