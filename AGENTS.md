@@ -9,6 +9,50 @@ Future: comments (post-MVP).
 
 > Inventário completo de rotas (admin, auth, pública) em `ADMIN_ROUTES.md` (não commitável).
 
+## Migration Process
+
+- **Only `drizzle-kit generate` may produce schema changes.** Hand-written `.sql`
+  is forbidden as the standard practice. Run `npm run db:generate`, which writes a
+  journaled migration + snapshot under `drizzle/migrations/`.
+- **Phase/PR checklist when a change touches `src/**/*.schema.ts`:**
+  1. `npm run db:generate` — produces `NNNN_*.sql` + snapshot + journal entry.
+  2. `npm run db:migrate` on the dev DB — verify it applies cleanly.
+  3. Commit the `drizzle/` artifacts (SQL + snapshot + `_journal.json`).
+  4. Confirm the new `_snapshot.json` exists alongside the `.sql`.
+  5. `npm run db:migrate` again — confirm zero pending.
+  6. `npm run db:migrations:check` — confirm "No drift" (schema.ts ↔ latest snapshot).
+- **Manual migrations are a documented exception only.** If a hand-written SQL
+  migration is ever unavoidable, it must: live under `drizzle/migrations/manual/`,
+  stay OUT of `_journal.json` (so `db:migrate` never auto-runs it), be applied via
+  psql, and be recorded explicitly in this file's history table below — never silent.
+- **snapshot ↔ schema anti-drift check:** `npm run db:migrations:check`
+  (`src/db/migrations-check.ts`) regenerates the snapshot from `schema.ts` via
+  `drizzle-kit` and deep-compares against the latest journal snapshot, without
+  touching the database. Exit 0 = no drift, exit 1 = drift (run `db:generate`).
+- **New environment provisioning:** a fresh DB only needs `npm run db:migrate`.
+  0015–0018 were folded into the formal state by 0019, so they must NOT be applied
+  separately anymore — `0019` covers the same DDL.
+
+### Historical manual migrations 0015–0018 (formalized retroactively by 0019)
+
+These are the historical hand-written series from the `user_id` → `profile_id`
+refactor. They were applied manually via psql, are tracked in git as documentation,
+and were retroactively formalized into the journal by `0019_baseline_profile_id_migration`
+(Build 2) — which aggregates their combined DDL and is registered as applied without
+execution. They no longer need manual application on new environments.
+
+| Migration | Applied on | State |
+| --------- | ---------- | ----- |
+| 0015_migrate_likes_bookmarks_to_profile_id | 2026-09-01 | manual, folded into 0019 |
+| 0016_migrate_highlights_books_to_profile_id | 2026-08-19 | manual, folded into 0019 |
+| 0017_migrate_exercise_submissions_and_user_apps_to_profile_id | 2026-08-20 | manual, folded into 0019 |
+| 0018_platform_apps_expansion_and_app_invites | 2026-08-21 | manual, folded into 0019 |
+
+Note: `0015` hardcodes the old unique-constraint names as `..._user_id_document_id_key`,
+but the dev DB had created them as `..._user_id_document_id_unique`. The manual
+application used the actual constraint names present in the DB. See
+`docs/MIGRATION_0015_0018_GITIGNORE_REPORT.md` for the full naming-divergence details.
+
 ## Tech Stack
 
 - **Runtime**: Node.js 20+
@@ -141,6 +185,7 @@ src/
   db/
     index.ts        - Drizzle client singleton
     migrate.ts      - Migration runner script
+    migrations-check.ts - schema.ts ↔ latest snapshot anti-drift check
     seed.ts         - Database seeder (categories, tags, platform_apps)
   utils/
     crypto.ts       - Password hashing + document signing utilities
@@ -674,6 +719,7 @@ Unique constraint: (follower_id, following_id)
 | `npm run db:migrate`    | Run pending migrations                          |
 | `npm run db:seed`       | Seed database (categories, tags, platform_apps) |
 | `npm run db:studio`     | Open Drizzle Studio                             |
+| `npm run db:migrations:check` | Check schema.ts vs latest snapshot drift   |
 | `npm test`              | Run all tests                                   |
 | `npm run test:watch`    | Run tests in watch mode                         |
 | `npm run test:coverage` | Run tests with coverage                         |
