@@ -106,6 +106,13 @@
       "when": 1786731037379,
       "tag": "0014_misty_boomerang",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788368965377,
+      "tag": "0019_baseline_profile_id_migration",
+      "breakpoints": true
     }
   ]
 }
