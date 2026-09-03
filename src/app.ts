@@ -74,7 +74,11 @@ export async function buildApp() {
     secret: env.JWT_ACCESS_SECRET,
   });
 
-  await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
+  await app.register(cors, {
+    origin: env.CORS_ORIGIN,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
+  });
 
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
 
