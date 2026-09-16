@@ -46,7 +46,6 @@ export async function indexSource(
 
   try {
     const embedding = await generateEmbedding(text);
-    const embeddingJson = JSON.stringify(embedding);
 
     const { db } = await import('../../db/index');
     const { embeddings } = await import('./memory.schema');
@@ -59,14 +58,14 @@ export async function indexSource(
         userId,
         sourceType,
         sourceId,
-        embedding: embeddingJson,
+        embedding,
         indexedAt: new Date(),
         createdAt: new Date(),
       })
       .onConflictDoUpdate({
         target: [embeddings.userId, embeddings.sourceType, embeddings.sourceId],
         set: {
-          embedding: embeddingJson,
+          embedding,
           indexedAt: new Date(),
         },
       });
