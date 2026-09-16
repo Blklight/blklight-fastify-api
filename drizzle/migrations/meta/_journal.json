@@ -113,6 +113,13 @@
       "when": 1788368965377,
       "tag": "0019_baseline_profile_id_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789596818471,
+      "tag": "0020_flashy_odin",
+      "breakpoints": true
     }
   ]
 }

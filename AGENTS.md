@@ -53,6 +53,16 @@ but the dev DB had created them as `..._user_id_document_id_unique`. The manual
 application used the actual constraint names present in the DB. See
 `docs/MIGRATION_0015_0018_GITIGNORE_REPORT.md` for the full naming-divergence details.
 
+### 0020 — embeddings to native pgvector (generated + hand-added backfill)
+
+`0020_flashy_odin.sql` was produced by `drizzle-kit generate` (`embeddings.embedding`
+text → `vector(768)`, plus the HNSW cosine index) and then hand-edited to insert a
+data backfill statement BEFORE the type change: the old JSON-array text is cast
+through `jsonb` (validation) and stripped of whitespace, then the column is altered
+with an explicit `USING "embedding"::vector`. Unlike 0015–0018, this migration stays
+IN `_journal.json` and is applied by `db:migrate` — the hand-added statement is
+documented in the SQL header. Applied on the dev DB 2026-09-16 with 0 data drift.
+
 ## Tech Stack
 
 - **Runtime**: Node.js 20+
