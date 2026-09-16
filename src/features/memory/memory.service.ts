@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, ne, inArray, sql } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { embeddings } from './memory.schema';
 import { notes } from '../notes/notes.schema';
@@ -33,27 +33,23 @@ export async function semanticSearch(
 ): Promise<MemorySearchResult[]> {
   try {
     const queryEmbedding = await generateEmbedding(query);
-    const queryJson = JSON.stringify(queryEmbedding);
+    const queryVector = `[${queryEmbedding.join(',')}]`;
+    const distanceExpr = sql<number>`${embeddings.embedding} <=> ${queryVector}::vector`;
 
-    const results = await db
-      .select()
+    const rows = await db
+      .select({
+        sourceType: embeddings.sourceType,
+        sourceId: embeddings.sourceId,
+        distance: distanceExpr,
+      })
       .from(embeddings)
       .where(eq(embeddings.userId, userId))
+      .orderBy(distanceExpr)
       .limit(limit);
-
-    const withScores = results.map(row => {
-      const emb = JSON.parse(row.embedding);
-      const distance = cosineDistance(queryEmbedding, emb);
-      return {
-        ...row,
-        distance,
-        similarity: getSimilarityScore(distance),
-      };
-    }).sort((a, b) => b.similarity - a.similarity);
 
     const resolved: MemorySearchResult[] = [];
 
-    for (const row of withScores) {
+    for (const row of rows) {
       let title: string | null = null;
       let snippet = '';
 
@@ -63,9 +59,6 @@ export async function semanticSearch(
           title = noteData.title;
           snippet = noteData.content.slice(0, 200);
         }
-      } else {
-        title = null;
-        snippet = '';
       }
 
       resolved.push({
@@ -73,7 +66,7 @@ export async function semanticSearch(
         sourceId: row.sourceId,
         title,
         snippet,
-        similarity: row.similarity,
+        similarity: getSimilarityScore(Number(row.distance)),
       });
     }
 
@@ -90,8 +83,8 @@ export async function getRelated(
   sourceId: string,
   limit: number
 ): Promise<MemorySearchResult[]> {
-  const [embedding] = await db
-    .select()
+  const [source] = await db
+    .select({ id: embeddings.id, embedding: embeddings.embedding })
     .from(embeddings)
     .where(
       and(
@@ -102,39 +95,33 @@ export async function getRelated(
     )
     .limit(1);
 
-  if (!embedding) {
+  if (!source) {
     return [];
   }
 
-  const embArray = JSON.parse(embedding.embedding);
+  const sourceVector = `[${source.embedding.join(',')}]`;
+  const distanceExpr = sql<number>`${embeddings.embedding} <=> ${sourceVector}::vector`;
 
   const related = await db
-    .select()
+    .select({
+      sourceType: embeddings.sourceType,
+      sourceId: embeddings.sourceId,
+      distance: distanceExpr,
+    })
     .from(embeddings)
     .where(
       and(
         eq(embeddings.userId, userId),
-        eq(embeddings.sourceType, sourceType)
+        eq(embeddings.sourceType, sourceType),
+        ne(embeddings.id, source.id)
       )
-    );
-
-  const withScores = related
-    .filter(r => r.id !== embedding.id)
-    .map(row => {
-      const emb = JSON.parse(row.embedding);
-      const distance = cosineDistance(embArray, emb);
-      return {
-        ...row,
-        distance,
-        similarity: getSimilarityScore(distance),
-      };
-    })
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, limit);
+    )
+    .orderBy(distanceExpr)
+    .limit(limit);
 
   const resolved: MemorySearchResult[] = [];
 
-  for (const row of withScores) {
+  for (const row of related) {
     let title: string | null = null;
     let snippet = '';
 
@@ -144,9 +131,6 @@ export async function getRelated(
         title = noteData.title;
         snippet = noteData.content.slice(0, 200);
       }
-    } else {
-      title = null;
-      snippet = '';
     }
 
     resolved.push({
@@ -154,7 +138,7 @@ export async function getRelated(
       sourceId: row.sourceId,
       title,
       snippet,
-      similarity: row.similarity,
+      similarity: getSimilarityScore(Number(row.distance)),
     });
   }
 
@@ -162,11 +146,8 @@ export async function getRelated(
 }
 
 export async function getDigest(userId: string): Promise<MemorySearchResult[]> {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-  const recentEmbeddings = await db
-    .select()
+  const recentEmbeddings: Array<{ id: string; sourceId: string; embedding: number[] }> = await db
+    .select({ id: embeddings.id, sourceId: embeddings.sourceId, embedding: embeddings.embedding })
     .from(embeddings)
     .where(
       and(
@@ -182,51 +163,39 @@ export async function getDigest(userId: string): Promise<MemorySearchResult[]> {
   }
 
   const first = recentEmbeddings[0]!;
-  const firstEmbedding = JSON.parse(first.embedding);
+  const firstVector = `[${first.embedding.join(',')}]`;
+  const distanceExpr = sql<number>`${embeddings.embedding} <=> ${firstVector}::vector`;
+  const candidateIds = recentEmbeddings.slice(1).map(row => row.id);
 
-  const withScores = recentEmbeddings.slice(1).map(row => {
-    const emb = JSON.parse(row.embedding);
-    const distance = cosineDistance(firstEmbedding, emb);
-    return {
-      ...row,
-      distance,
-      similarity: getSimilarityScore(distance),
-    };
-  }).sort((a, b) => b.similarity - a.similarity);
+  const rows = await db
+    .select({
+      sourceType: embeddings.sourceType,
+      sourceId: embeddings.sourceId,
+      distance: distanceExpr,
+    })
+    .from(embeddings)
+    .where(
+      and(
+        eq(embeddings.userId, userId),
+        eq(embeddings.sourceType, 'note'),
+        inArray(embeddings.id, candidateIds)
+      )
+    )
+    .orderBy(distanceExpr)
+    .limit(5);
 
   const resolved: MemorySearchResult[] = [];
 
-  for (const row of withScores.slice(0, 5)) {
+  for (const row of rows) {
     const noteData = await resolveNoteTitle(row.sourceId);
     resolved.push({
       sourceType: row.sourceType,
       sourceId: row.sourceId,
       title: noteData?.title ?? null,
       snippet: noteData?.content.slice(0, 200) ?? '',
-      similarity: row.similarity,
+      similarity: getSimilarityScore(Number(row.distance)),
     });
   }
 
   return resolved;
-}
-
-function cosineDistance(a: number[], b: number[]): number {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
-  const len = Math.min(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    const ai = a[i] ?? 0;
-    const bi = b[i] ?? 0;
-    dotProduct += ai * bi;
-    normA += ai * ai;
-    normB += bi * bi;
-  }
-
-  if (normA === 0 || normB === 0) {
-    return 1;
-  }
-
-  return 1 - (dotProduct / (Math.sqrt(normA) * Math.sqrt(normB)));
 }
