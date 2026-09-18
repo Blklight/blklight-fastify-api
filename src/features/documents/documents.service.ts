@@ -709,34 +709,51 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
     results.pop();
   }
 
-  const items: DocumentCard[] = await Promise.all(
-    results.map(async (r) => {
-      const authorship = r.authorship as Authorship | null;
-      const docTags = await getDocumentTags(r.id);
-      return {
-        id: r.id,
-        title: r.title,
-        abstract: r.abstract,
-        coverImageUrl: r.coverImageUrl,
-        slug: r.slug,
-        publishedAt: r.publishedAt as Date,
-        typeName: r.typeName,
-        author: {
-          username: r.username,
-          displayName: r.displayName,
-          avatarUrl: r.avatarUrl,
-        },
-        authorship: {
-          publicIdentifier: authorship?.publicIdentifier ?? '',
-        },
-        likesCount: Number(r.likesCount ?? 0),
-        category: r.categoryId
-          ? { id: r.categoryId, name: r.categoryName!, slug: r.categorySlug! }
-          : null,
-        tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
-      };
-    })
-  );
+  const tagRows = results.length > 0
+    ? await db
+        .select({
+          documentId: documentTags.documentId,
+          id: tagsTable.id,
+          name: tagsTable.name,
+          slug: tagsTable.slug,
+        })
+        .from(documentTags)
+        .innerJoin(tagsTable, eq(documentTags.tagId, tagsTable.id))
+        .where(inArray(documentTags.documentId, results.map((r) => r.id)))
+    : [];
+
+  const tagsByDoc = new Map<string, { id: string; name: string; slug: string }[]>();
+  for (const row of tagRows) {
+    const existing = tagsByDoc.get(row.documentId) ?? [];
+    existing.push({ id: row.id, name: row.name, slug: row.slug });
+    tagsByDoc.set(row.documentId, existing);
+  }
+
+  const items: DocumentCard[] = results.map((r) => {
+    const authorship = r.authorship as Authorship | null;
+    return {
+      id: r.id,
+      title: r.title,
+      abstract: r.abstract,
+      coverImageUrl: r.coverImageUrl,
+      slug: r.slug,
+      publishedAt: r.publishedAt as Date,
+      typeName: r.typeName,
+      author: {
+        username: r.username,
+        displayName: r.displayName,
+        avatarUrl: r.avatarUrl,
+      },
+      authorship: {
+        publicIdentifier: authorship?.publicIdentifier ?? '',
+      },
+      likesCount: Number(r.likesCount ?? 0),
+      category: r.categoryId
+        ? { id: r.categoryId, name: r.categoryName!, slug: r.categorySlug! }
+        : null,
+      tags: tagsByDoc.get(r.id) ?? [],
+    };
+  });
 
   const lastResult = results[results.length - 1];
   const nextCursor = hasMore && lastResult
