@@ -1,4 +1,4 @@
-import { eq, and, isNull, desc, lt, or, ilike, count, sql } from 'drizzle-orm';
+import { eq, and, isNull, desc, lt, or, ilike, count, sql, exists, inArray, type SQL } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { documents, documentTypes, documentStyles, Document, NewDocument, NewDocumentStyle } from './documents.schema';
@@ -9,7 +9,7 @@ import { categories, documentCategories } from '../categories/categories.schema'
 import { tags as tagsTable, documentTags } from '../tags/tags.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError } from '../../utils/errors';
-import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { encodeCursor, decodeCursor, encodeFeedCursor, decodeFeedCursor } from '../../utils/cursor';
 import { getLikesCount } from '../likes/likes.service';
 import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
 import { getDocumentCategory, setDocumentCategory } from '../categories/categories.service';
@@ -605,7 +605,8 @@ export interface DocumentFull {
  */
 export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
   const limit = Math.min(params.limit ?? 20, 50);
-  const conditions: ReturnType<typeof eq>[] = [];
+  const sort = params.sort ?? 'recent';
+  const conditions: SQL[] = [];
 
   conditions.push(eq(documents.status, 'published'));
   conditions.push(isNull(documents.deletedAt));
@@ -618,14 +619,64 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
     conditions.push(eq(profiles.username, params.author));
   }
 
-  if (params.cursor) {
-    const { timestamp: publishedAt, id } = decodeCursor(params.cursor);
-    conditions.push(lt(documents.publishedAt, publishedAt));
+  if (params.category) {
+    conditions.push(eq(categories.slug, params.category));
+  }
+
+  if (params.tag) {
+    const tagSlug = params.tag;
+    conditions.push(
+      exists(
+        db
+          .select({ matches: sql`1` })
+          .from(documentTags)
+          .innerJoin(tagsTable, eq(documentTags.tagId, tagsTable.id))
+          .where(and(eq(documentTags.documentId, documents.id), eq(tagsTable.slug, tagSlug))!)
+      )
+    );
+  }
+
+  if (params.q) {
+    const searchPattern = `%${params.q}%`;
+    conditions.push(
+      or(
+        ilike(documents.title, searchPattern),
+        ilike(documents.abstract, searchPattern)
+      )!
+    );
   }
 
   const likesSubquery = sql<number>`(SELECT COUNT(*) FROM document_likes WHERE document_id = ${documents.id})`;
 
-  let baseQuery = db
+  // Keyset page condition is applied only to the page query — the count below
+  // must reflect the whole filtered set, not "everything after the cursor".
+  const pageConditions = [...conditions];
+
+  if (params.cursor) {
+    const decoded = decodeFeedCursor(params.cursor);
+    // A cursor from another sort mode cannot be used as a keyset here; ignoring it
+    // would silently restart pagination, so a mismatch serves the first page and
+    // the client is expected to restart with the matching sort.
+    if (decoded.sort === sort) {
+      if (decoded.sort === 'popular') {
+        pageConditions.push(
+          or(
+            lt(likesSubquery, decoded.likesCount),
+            and(eq(likesSubquery, decoded.likesCount), lt(documents.id, decoded.id))
+          )!
+        );
+      } else {
+        pageConditions.push(
+          or(
+            lt(documents.publishedAt, decoded.publishedAt),
+            and(eq(documents.publishedAt, decoded.publishedAt), lt(documents.id, decoded.id))
+          )!
+        );
+      }
+    }
+  }
+
+  const results = await db
     .select({
       id: documents.id,
       title: documents.title,
@@ -639,57 +690,19 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
       avatarUrl: profiles.avatarUrl,
       authorship: documents.authorship,
       likesCount: likesSubquery,
+      categoryId: documentCategories.categoryId,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
-    .innerJoin(users, eq(profiles.userId, users.id));
-
-  let results: any[];
-
-  if (params.q) {
-    const searchPattern = `%${params.q}%`;
-    results = await baseQuery
-      .where(
-        and(
-          ...conditions,
-          or(
-            ilike(documents.title, searchPattern),
-            ilike(documents.abstract, searchPattern)
-          )
-        )
-      )
-      .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
-      .limit(limit + 1);
-  } else {
-    results = await baseQuery
-      .where(and(...conditions))
-      .orderBy(params.sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
-      .limit(limit + 1);
-  }
-
-  if (params.category || params.tag) {
-    let filtered: string[] = results.map((r) => r.id);
-    if (params.category) {
-      const catDocs = await db
-        .select({ documentId: documentCategories.documentId })
-        .from(documentCategories)
-        .innerJoin(categories, eq(documentCategories.categoryId, categories.id))
-        .where(eq(categories.slug, params.category));
-
-      filtered = filtered.filter((id) => catDocs.some((c) => c.documentId === id));
-    }
-    if (params.tag) {
-      const tagDocs = await db
-        .select({ documentId: documentTags.documentId })
-        .from(documentTags)
-        .innerJoin(tagsTable, eq(documentTags.tagId, tagsTable.id))
-        .where(eq(tagsTable.slug, params.tag));
-
-      filtered = filtered.filter((id) => tagDocs.some((t) => t.documentId === id));
-    }
-    results = results.filter((r) => filtered.includes(r.id));
-  }
+    .innerJoin(users, eq(profiles.userId, users.id))
+    .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
+    .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
+    .where(and(...pageConditions))
+    .orderBy(sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
+    .limit(limit + 1);
 
   const hasMore = results.length > limit;
   if (hasMore) {
@@ -700,7 +713,6 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
     results.map(async (r) => {
       const authorship = r.authorship as Authorship | null;
       const docTags = await getDocumentTags(r.id);
-      const docCategory = await getDocumentCategory(r.id);
       return {
         id: r.id,
         title: r.title,
@@ -718,8 +730,8 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
           publicIdentifier: authorship?.publicIdentifier ?? '',
         },
         likesCount: Number(r.likesCount ?? 0),
-        category: docCategory
-          ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
+        category: r.categoryId
+          ? { id: r.categoryId, name: r.categoryName!, slug: r.categorySlug! }
           : null,
         tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
       };
@@ -728,46 +740,22 @@ export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
 
   const lastResult = results[results.length - 1];
   const nextCursor = hasMore && lastResult
-    ? encodeCursor(lastResult.publishedAt as Date, lastResult.id)
+    ? sort === 'popular'
+      ? encodeFeedCursor('popular', Number(lastResult.likesCount ?? 0), lastResult.id)
+      : encodeFeedCursor('recent', lastResult.publishedAt as Date, lastResult.id)
     : null;
 
-  let countConditions = [...conditions];
-  let countQuery = db
+  const [totalResult] = await db
     .select({ count: count() })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
     .innerJoin(users, eq(profiles.userId, users.id))
-    .where(and(...countConditions));
+    .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
+    .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
+    .where(and(...conditions));
 
-  if (params.q) {
-    const searchPattern = `%${params.q}%`;
-    countQuery = db
-      .select({ count: count() })
-      .from(documents)
-      .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
-      .innerJoin(profiles, eq(documents.authorId, profiles.id))
-      .innerJoin(users, eq(profiles.userId, users.id))
-      .where(
-        and(
-          ...countConditions,
-          or(
-            ilike(documents.title, searchPattern),
-            ilike(documents.abstract, searchPattern)
-          )
-        )
-      ) as typeof countQuery;
-  }
-
-  const totalResult = await countQuery;
-  let total = Number(totalResult[0]?.count ?? 0);
-
-  if (params.category || params.tag) {
-    const docIds = results.map((r) => r.id);
-    total = docIds.length;
-  }
-
-  return { items, nextCursor, total };
+  return { items, nextCursor, total: Number(totalResult?.count ?? 0) };
 }
 
 /**
