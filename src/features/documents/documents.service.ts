@@ -1,4 +1,4 @@
-import { eq, and, isNull, desc, lt, or, ilike, count, sql, exists, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, isNull, desc, lt, or, ilike, count, sql, exists, inArray, ne, type SQL } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { documents, documentTypes, documentStyles, Document, NewDocument, NewDocumentStyle } from './documents.schema';
@@ -74,7 +74,7 @@ async function isDocumentSlugTaken(authorId: string, slug: string, excludeId?: s
   ];
 
   if (excludeId) {
-    conditions.push(eq(documents.id, excludeId));
+    conditions.push(ne(documents.id, excludeId));
   }
 
   const existing = await db
