@@ -1,6 +1,7 @@
 import { createId } from '@paralleldrive/cuid2';
 
 const TICKET_TTL_MS = 30_000;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 interface WsTicket {
   profileId: string;
@@ -8,6 +9,8 @@ interface WsTicket {
 }
 
 const tickets = new Map<string, WsTicket>();
+
+let cleanupTimer: NodeJS.Timeout | null = null;
 
 /**
  * Create a short-lived WebSocket connection ticket for a profile.
@@ -43,4 +46,30 @@ export function consumeWsTicket(ticket: string): string | null {
   }
 
   return entry.profileId;
+}
+
+/**
+ * Start periodic GC of expired tickets.
+ * Must be called once at server startup; returns a cleanup function to stop the interval.
+ */
+export function startTicketCleanup(): () => void {
+  if (cleanupTimer) return () => stopTicketCleanup();
+  cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [ticket, entry] of tickets) {
+      if (now > entry.expiresAt) tickets.delete(ticket);
+    }
+  }, CLEANUP_INTERVAL_MS);
+  return () => stopTicketCleanup();
+}
+
+/**
+ * Stop the periodic GC interval.
+ * Called during graceful shutdown to ensure the process is not held open by the timer.
+ */
+export function stopTicketCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
 }

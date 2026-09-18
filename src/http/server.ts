@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import { buildApp } from "../app";
 import { env } from "../config/env";
 import { startEmailQueue } from "../features/email/email.service";
+import { startTicketCleanup } from "../features/chat/ws-tickets";
 import { features } from "../config/features";
 
 config();
@@ -9,8 +10,11 @@ config();
 async function start() {
   const app = await buildApp();
 
+  let stopTicketCleanup: (() => void) | undefined;
+
   const shutdown = async (signal: string) => {
     app.log.info(`Received ${signal}, shutting down gracefully...`);
+    stopTicketCleanup?.();
     await app.close();
     process.exit(0);
   };
@@ -22,6 +26,8 @@ async function start() {
     await app.listen({ port: env.PORT, host: "0.0.0.0" });
     app.log.info(`Server running at http://localhost:${env.PORT}`);
     app.log.info(`API docs available at http://localhost:${env.PORT}/docs`);
+
+    stopTicketCleanup = startTicketCleanup();
 
     app.log.info(`Environment: ${features.emailQueue}`);
     if (features.emailQueue) {
