@@ -189,6 +189,8 @@ export default async function documentRoutes(app: FastifyInstance) {
           author: { type: 'string' },
           q: { type: 'string', minLength: 1, maxLength: 100 },
           sort: { type: 'string', enum: ['recent', 'popular'], default: 'recent' },
+          category: { type: 'string' },
+          tag: { type: 'string' },
         },
       },
       response: {
@@ -212,7 +214,7 @@ export default async function documentRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (request: FastifyRequest<{ Querystring: { cursor?: string; limit?: number; type?: string; author?: string; q?: string; sort?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Querystring: { cursor?: string; limit?: number; type?: string; author?: string; q?: string; sort?: string; category?: string; tag?: string } }>, reply: FastifyReply) => {
     const parsed = feedQuerySchema.safeParse(request.query);
 
     if (!parsed.success) {
