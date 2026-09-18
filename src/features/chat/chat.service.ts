@@ -6,6 +6,7 @@ import { profiles } from '../profiles/profiles.schema';
 import { NotFoundError, ForbiddenError, ConflictError, ValidationError } from '../../utils/errors';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { generateSlug, resolveUniqueSlug } from '../../utils/slug';
 import { broadcastToChannel } from './ws-registry';
 import type { CreateServerInput, CreateChannelInput, MessageQueryInput } from './chat.zod';
 
@@ -123,34 +124,14 @@ export async function assertCanAccessChannel(profileId: string, channelId: strin
   await assertAcceptedMember(server.id, profileId);
 }
 
-function generateSlug(name: string): string {
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 100);
-}
+async function isServerSlugTaken(slug: string): Promise<boolean> {
+  const existing = await db
+    .select({ id: chatServers.id })
+    .from(chatServers)
+    .where(eq(chatServers.slug, slug))
+    .limit(1);
 
-async function ensureUniqueSlug(slug: string): Promise<string> {
-  let finalSlug = slug;
-  let counter = 1;
-
-  while (true) {
-    const existing = await db
-      .select({ id: chatServers.id })
-      .from(chatServers)
-      .where(eq(chatServers.slug, finalSlug))
-      .limit(1);
-
-    if (existing.length === 0) {
-      return finalSlug;
-    }
-
-    finalSlug = `${slug}-${counter}`;
-    counter++;
-  }
+  return existing.length > 0;
 }
 
 /**
@@ -162,7 +143,7 @@ async function ensureUniqueSlug(slug: string): Promise<string> {
  */
 export async function createServer(userId: string, data: CreateServerInput): Promise<ChatServer> {
   const profileId = await resolveProfileIdFromUserId(userId);
-  const slug = await ensureUniqueSlug(generateSlug(data.name));
+  const slug = await resolveUniqueSlug(generateSlug(data.name), isServerSlugTaken);
 
   const server = await db.transaction(async (tx) => {
     const [created] = await tx

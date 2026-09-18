@@ -10,6 +10,7 @@ import { tags as tagsTable, documentTags } from '../tags/tags.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor, encodeFeedCursor, decodeFeedCursor } from '../../utils/cursor';
+import { generateSlug, resolveUniqueSlug } from '../../utils/slug';
 import { getLikesCount } from '../likes/likes.service';
 import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
 import { getDocumentCategory, setDocumentCategory } from '../categories/categories.service';
@@ -66,43 +67,23 @@ export interface Authorship {
   signedAt: string;
 }
 
-function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 100);
-}
+async function isDocumentSlugTaken(authorId: string, slug: string, excludeId?: string): Promise<boolean> {
+  const conditions = [
+    eq(documents.authorId, authorId),
+    eq(documents.slug, slug),
+  ];
 
-async function ensureUniqueSlug(authorId: string, slug: string, excludeId?: string): Promise<string> {
-  let finalSlug = slug;
-  let counter = 1;
-
-  while (true) {
-    const conditions = [
-      eq(documents.authorId, authorId),
-      eq(documents.slug, finalSlug),
-    ];
-
-    if (excludeId) {
-      conditions.push(eq(documents.id, excludeId));
-    }
-
-    const existing = await db
-      .select({ id: documents.id })
-      .from(documents)
-      .where(and(...conditions))
-      .limit(1);
-
-    if (existing.length === 0) {
-      return finalSlug;
-    }
-
-    finalSlug = `${slug}-${counter}`;
-    counter++;
+  if (excludeId) {
+    conditions.push(eq(documents.id, excludeId));
   }
+
+  const existing = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(and(...conditions))
+    .limit(1);
+
+  return existing.length > 0;
 }
 
 function getDefaultStyles(typeName: string): Partial<NewDocumentStyle> {
@@ -152,7 +133,7 @@ export async function createDocument(
 
   const type = typeResult[0]!;
   const baseSlug = data.slug ?? generateSlug(data.title);
-  const slug = await ensureUniqueSlug(authorId, baseSlug);
+  const slug = await resolveUniqueSlug(baseSlug, (candidate) => isDocumentSlugTaken(authorId, candidate));
   const now = new Date();
   const documentId = createId();
 
@@ -225,12 +206,16 @@ export async function updateDocument(
   if (data.title !== undefined) {
     updates.title = data.title;
     if (data.slug === undefined && existingDoc.status !== 'published') {
-      updates.slug = await ensureUniqueSlug(authorId, generateSlug(data.title), documentId);
+      updates.slug = await resolveUniqueSlug(generateSlug(data.title), (candidate) =>
+        isDocumentSlugTaken(authorId, candidate, documentId)
+      );
     }
   }
 
   if (data.slug !== undefined) {
-    updates.slug = await ensureUniqueSlug(authorId, data.slug, documentId);
+    updates.slug = await resolveUniqueSlug(data.slug, (candidate) =>
+      isDocumentSlugTaken(authorId, candidate, documentId)
+    );
   }
 
   if (data.abstract !== undefined) {
