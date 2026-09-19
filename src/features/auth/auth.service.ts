@@ -498,6 +498,10 @@ export async function loginUser(
 
   const user = userRows[0]!;
 
+  if (user.deletedAt !== null) {
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
   if (!user.passwordHash || !user.salt) {
     throw new UnauthorizedError('Invalid email or password');
   }
