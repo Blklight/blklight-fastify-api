@@ -698,9 +698,3 @@ export default async function authRoutes(app: FastifyInstance) {
 function parseRefreshMaxAge(expiresIn: string): number {
   return Math.round(parseDurationMs(expiresIn) / 1000);
 }
-
-declare module 'fastify' {
-  interface FastifyInstance {
-    authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
-  }
-}
