@@ -605,10 +605,19 @@ export async function getFollowingFeed(
     tags: tagsByDoc.get(doc.id) ?? [],
   }));
 
+  const [totalResult] = await db
+    .select({ count: count() })
+    .from(documents)
+    .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
+    .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
+    .where(and(...conditions));
+
   return {
     items: documentCards,
     nextCursor,
-    total: documentCards.length,
+    total: Number(totalResult?.count ?? 0),
   };
 }
 
