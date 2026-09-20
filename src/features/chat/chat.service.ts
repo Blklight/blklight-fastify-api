@@ -1,4 +1,4 @@
-import { eq, and, asc, desc, lt, sql, isNull, count } from 'drizzle-orm';
+import { eq, and, asc, desc, lt, sql, isNull, count, or } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { chatServers, chatServerMembers, chatChannels, chatMessages, ChatServer, ChatServerMember, ChatChannel, ChatMessage } from './chat.schema';
@@ -579,11 +579,16 @@ export async function listMessages(
   const conditions = [eq(chatMessages.channelId, channelId)];
 
   if (params.cursor) {
-    const { timestamp } = decodeCursor(params.cursor);
-    conditions.push(lt(chatMessages.createdAt, timestamp));
+    const { timestamp, id } = decodeCursor(params.cursor);
+    conditions.push(
+      or(
+        lt(chatMessages.createdAt, timestamp),
+        and(eq(chatMessages.createdAt, timestamp), lt(chatMessages.id, id))
+      )!
+    );
   }
 
-  let results = await db
+  const results = await db
     .select({
       id: chatMessages.id,
       channelId: chatMessages.channelId,
@@ -601,13 +606,6 @@ export async function listMessages(
     .where(and(...conditions))
     .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
     .limit(limit + 1);
-
-  if (params.cursor && results.length > limit) {
-    const { timestamp, id } = decodeCursor(params.cursor);
-    results = results.filter(
-      (r) => r.createdAt > timestamp || (r.createdAt.getTime() === timestamp.getTime() && r.id < id)
-    );
-  }
 
   const hasMore = results.length > limit;
   if (hasMore) {
