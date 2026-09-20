@@ -9,6 +9,7 @@ import { canvas } from '../canvas/canvas.schema';
 import { getUserApps } from '../platform-apps/platform-apps.service';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError, NotFoundError, ValidationError } from '../../utils/errors';
+import { parseDurationMs } from '../../utils/duration';
 import { env } from '../../config/env';
 import { sendVerificationEmail } from '../email/email.service';
 import { features } from '../../config/features';
@@ -108,15 +109,7 @@ function isOAuthPlaceholderUsername(username: string | null): boolean {
 }
 
 function parseExpiration(expiresIn: string): Date {
-  const match = expiresIn.match(/^(\d+)([smhd])$/);
-  if (!match || !match[1] || !match[2]) {
-    return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-  }
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  const msMap: Record<string, number> = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
-  const ms = msMap[unit] ?? 86400000;
-  return new Date(Date.now() + value * ms);
+  return new Date(Date.now() + parseDurationMs(expiresIn));
 }
 
 export async function registerUser(

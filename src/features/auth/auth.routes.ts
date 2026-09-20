@@ -18,6 +18,7 @@ import { users } from './auth.schema';
 import { verifyEmail, sendVerificationEmail, sendPasswordResetEmail, resetPassword } from '../email/email.service';
 import { requireFeature } from '../../config/features';
 import { env } from '../../config/env';
+import { parseDurationMs } from '../../utils/duration';
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
@@ -695,14 +696,7 @@ export default async function authRoutes(app: FastifyInstance) {
 }
 
 function parseRefreshMaxAge(expiresIn: string): number {
-  const match = expiresIn.match(/^(\d+)([smhd])$/);
-  if (!match || !match[1] || !match[2]) {
-    return 7 * 24 * 60 * 60;
-  }
-  const value = parseInt(match[1], 10);
-  const unit = match[2];
-  const multipliers: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
-  return value * (multipliers[unit] ?? 86400);
+  return Math.round(parseDurationMs(expiresIn) / 1000);
 }
 
 declare module 'fastify' {
