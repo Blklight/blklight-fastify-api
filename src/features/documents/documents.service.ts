@@ -13,7 +13,8 @@ import { encodeCursor, decodeCursor, encodeFeedCursor, decodeFeedCursor } from '
 import { generateSlug, resolveUniqueSlug } from '../../utils/slug';
 import { getLikesCount } from '../likes/likes.service';
 import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
-import { getDocumentCategory, setDocumentCategory } from '../categories/categories.service';
+import { getDocumentCategory, setDocumentCategory, removeDocumentCategory } from '../categories/categories.service';
+import { getExercises } from '../tutorial-exercises/tutorial-exercises.service';
 import type { CreateDocumentInput, UpdateDocumentInput } from './documents.zod';
 import type { NewProfile } from '../profiles/profiles.schema';
 
@@ -283,7 +284,6 @@ export async function updateDocument(
       if (data.categoryId) {
         await setDocumentCategory(documentId, data.categoryId);
       } else {
-        const { removeDocumentCategory } = await import('../categories/categories.service');
         await removeDocumentCategory(documentId);
       }
     }
@@ -291,9 +291,7 @@ export async function updateDocument(
       if (data.tags.length > 0) {
         await setDocumentTags(documentId, data.tags);
       } else {
-        const { db: txDb } = await import('../../db/index');
-        const { documentTags: dt } = await import('../tags/tags.schema');
-        await txDb.delete(dt).where(eq(dt.documentId, documentId));
+        await db.delete(documentTags).where(eq(documentTags.documentId, documentId));
       }
     }
   }
@@ -860,7 +858,6 @@ export async function getPublicDocument(username: string, slug: string, profileI
   };
 
   if (doc.typeName === 'tutorial') {
-    const { getExercises } = await import('../tutorial-exercises/tutorial-exercises.service');
     result.exercises = await getExercises(doc.id);
   }
 

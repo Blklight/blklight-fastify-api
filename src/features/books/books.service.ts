@@ -18,6 +18,7 @@ import { profiles } from '../profiles/profiles.schema';
 import { documents } from '../documents/documents.schema';
 import { categories } from '../categories/categories.schema';
 import { tags as tagsTable } from '../tags/tags.schema';
+import { normalizeTag, upsertTags } from '../tags/tags.service';
 import { users } from '../auth/auth.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
@@ -101,9 +102,6 @@ async function removeBookCategory(bookId: string): Promise<void> {
 }
 
 async function setBookTags(bookId: string, tagNames: string[]): Promise<void> {
-  const { normalizeTag } = await import('../tags/tags.service');
-  const { upsertTags } = await import('../tags/tags.service');
-
   const uniqueNames = [...new Set(tagNames.map((n) => normalizeTag(n)))];
   const tagRecords = await upsertTags(uniqueNames);
 

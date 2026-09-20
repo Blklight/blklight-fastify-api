@@ -558,9 +558,6 @@ export default async function authRoutes(app: FastifyInstance) {
     requireFeature('email');
 
     const userId = request.user.userId;
-    const { users } = await import('../auth/auth.schema');
-    const { db } = await import('../../db/index');
-    const { eq } = await import('drizzle-orm');
 
     const [user] = await db
       .select()

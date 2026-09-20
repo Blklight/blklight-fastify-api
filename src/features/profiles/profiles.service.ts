@@ -1,8 +1,10 @@
 import { eq, and, isNull, or, gt, ne } from 'drizzle-orm';
 import { db } from '../../db/index';
-import { users } from '../auth/auth.schema';
+import { users, sessions } from '../auth/auth.schema';
 import { profiles } from './profiles.schema';
 import { NotFoundError, ConflictError } from '../../utils/errors';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
+import { getFollowStatus } from '../follows/follows.service';
 import type { UpdateProfileInput } from './profiles.zod';
 
 export interface PublicProfile {
@@ -78,7 +80,6 @@ export async function getPublicProfile(
   let viewerProfileId: string | null = null;
 
   if (viewerUserId) {
-    const { resolveProfileIdFromUserId } = await import('../follows/follows.service');
     try {
       viewerProfileId = await resolveProfileIdFromUserId(viewerUserId);
     } catch {
@@ -87,7 +88,6 @@ export async function getPublicProfile(
   }
 
   if (viewerProfileId && viewerProfileId !== profile.id) {
-    const { getFollowStatus } = await import('../follows/follows.service');
     followStatus = await getFollowStatus(viewerProfileId, profile.id);
     isFollowing = followStatus === 'accepted';
   }
@@ -259,8 +259,6 @@ export async function updateProfile(
  * @param userId - The authenticated user's ID
  */
 export async function deleteAccount(userId: string): Promise<void> {
-  const { sessions } = await import('../auth/auth.schema');
-
   await db.transaction(async (tx) => {
     await tx
       .update(users)

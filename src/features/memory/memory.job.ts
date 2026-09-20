@@ -1,5 +1,9 @@
 import { env } from '../../config/env';
 import { features } from '../../config/features';
+import { db } from '../../db/index';
+import { embeddings } from './memory.schema';
+import { createId } from '@paralleldrive/cuid2';
+import { and, eq } from 'drizzle-orm';
 
 const GEMINI_EMBEDDING_URL = 'https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent';
 
@@ -47,10 +51,6 @@ export async function indexSource(
   try {
     const embedding = await generateEmbedding(text);
 
-    const { db } = await import('../../db/index');
-    const { embeddings } = await import('./memory.schema');
-    const { createId } = await import('@paralleldrive/cuid2');
-
     await db
       .insert(embeddings)
       .values({
@@ -82,10 +82,6 @@ export async function removeSource(
   if (!features.memory) {
     return;
   }
-
-  const { db } = await import('../../db/index');
-  const { embeddings } = await import('./memory.schema');
-  const { and, eq } = await import('drizzle-orm');
 
   await db
     .delete(embeddings)
