@@ -13,3 +13,7 @@ const client = postgres(env.DATABASE_URL, {
   connect_timeout: 10,
 });
 export const db = drizzle(client);
+
+export async function closeDb(): Promise<void> {
+  await client.end();
+}

@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 import { buildApp } from "../app";
 import { env } from "../config/env";
+import { closeDb } from "../db";
 import { startEmailQueue } from "../features/email/email.service";
 import { startTicketCleanup } from "../features/chat/ws-tickets";
 import { features } from "../config/features";
@@ -16,6 +17,9 @@ async function start() {
     app.log.info(`Received ${signal}, shutting down gracefully...`);
     stopTicketCleanup?.();
     await app.close();
+    // Close the DB pool last: in-flight request queries must finish before we
+    // release the pooled connections.
+    await closeDb();
     process.exit(0);
   };
 
