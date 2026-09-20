@@ -564,16 +564,18 @@ export async function getFollowingFeed(
 
   const items = docsWithLimit.slice(0, limit);
 
-  const tagRows = await db
-    .select({
-      documentId: documentTags.documentId,
-      tagId: tags.id,
-      tagName: tags.name,
-      tagSlug: tags.slug,
-    })
-    .from(documentTags)
-    .innerJoin(tags, eq(documentTags.tagId, tags.id))
-    .where(sql`${documentTags.documentId} IN (${sql.join(items.map((i) => sql`${i.id}`), sql`, `)})`);
+  const tagRows = items.length > 0
+    ? await db
+        .select({
+          documentId: documentTags.documentId,
+          tagId: tags.id,
+          tagName: tags.name,
+          tagSlug: tags.slug,
+        })
+        .from(documentTags)
+        .innerJoin(tags, eq(documentTags.tagId, tags.id))
+        .where(sql`${documentTags.documentId} IN (${sql.join(items.map((i) => sql`${i.id}`), sql`, `)})`)
+    : [];
 
   const tagsByDoc = new Map<string, { id: string; name: string; slug: string }[]>();
   for (const row of tagRows) {
