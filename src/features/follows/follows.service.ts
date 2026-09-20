@@ -1,4 +1,4 @@
-import { eq, and, sql, count, desc, isNull } from 'drizzle-orm';
+import { eq, and, sql, count, desc, isNull, lt, or, type SQL } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { follows, Follow } from './follows.schema';
 import { profiles, Profile } from '../profiles/profiles.schema';
@@ -12,6 +12,7 @@ import { tags } from '../tags/tags.schema';
 import { documentLikes } from '../likes/likes.schema';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
+import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import { createId } from '@paralleldrive/cuid2';
 import type { DocumentCard } from '../documents/documents.service';
 
@@ -508,6 +509,24 @@ export async function getFollowingFeed(
 
   const authorIdsSubquery = sql`(SELECT user_id FROM profiles WHERE id IN (${sql.join(accessibleIds, sql`, `)}))`;
 
+  const conditions: SQL[] = [
+    sql`${documents.authorId} IN (${sql.join(accessibleIds, sql`, `)})`,
+    eq(documents.status, 'published'),
+    isNull(documents.deletedAt),
+  ];
+
+  const pageConditions = [...conditions];
+
+  if (params.cursor) {
+    const { timestamp, id } = decodeCursor(params.cursor);
+    pageConditions.push(
+      or(
+        lt(documents.publishedAt, timestamp),
+        and(eq(documents.publishedAt, timestamp), lt(documents.id, id))
+      )!
+    );
+  }
+
   const documentsQuery = db
     .select({
       id: documents.id,
@@ -531,13 +550,7 @@ export async function getFollowingFeed(
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
     .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
-    .where(
-      and(
-        sql`${documents.authorId} IN (${sql.join(accessibleIds, sql`, `)})`,
-        eq(documents.status, 'published'),
-        isNull(documents.deletedAt)
-      )
-    )
+    .where(and(...pageConditions))
     .orderBy(desc(documents.publishedAt), desc(documents.id))
     .limit(limit + 1);
 
@@ -546,9 +559,7 @@ export async function getFollowingFeed(
   let nextCursor: string | null = null;
   if (docsWithLimit.length > limit) {
     const lastDoc = docsWithLimit[limit - 1]!;
-    nextCursor = Buffer.from(
-      JSON.stringify({ publishedAt: lastDoc.publishedAt!.toISOString(), id: lastDoc.id })
-    ).toString('base64');
+    nextCursor = encodeCursor(lastDoc.publishedAt!, lastDoc.id);
   }
 
   const items = docsWithLimit.slice(0, limit);
