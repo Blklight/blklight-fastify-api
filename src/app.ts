@@ -1,4 +1,9 @@
-import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import Fastify, {
+  FastifyInstance,
+  FastifyRequest,
+  FastifyReply,
+  type FastifySchemaValidationError,
+} from 'fastify';
 import { ZodError } from 'zod';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -161,6 +166,28 @@ export async function buildApp() {
           code: error.code,
           message: error.message,
           fields: error.fields,
+        },
+        message: 'Validation failed',
+      });
+    }
+
+    const knownError = error as Error & { code?: string; validation?: FastifySchemaValidationError[] };
+    if (knownError.code === 'FST_ERR_VALIDATION') {
+      const fields: Record<string, string> = {};
+      for (const item of knownError.validation ?? []) {
+        const missing = item.params['missingProperty'];
+        const path = item.instancePath.replace(/^\//, '').replace(/\//g, '.');
+        const key = typeof missing === 'string' && missing !== '' ? missing : path;
+        if (key && !fields[key]) {
+          fields[key] = item.message ?? 'Invalid field';
+        }
+      }
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          ...(Object.keys(fields).length > 0 ? { fields } : {}),
         },
         message: 'Validation failed',
       });
