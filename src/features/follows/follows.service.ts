@@ -11,8 +11,11 @@ import { documentTags } from '../tags/tags.schema';
 import { tags } from '../tags/tags.schema';
 import { documentLikes } from '../likes/likes.schema';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 import { createId } from '@paralleldrive/cuid2';
 import type { DocumentCard } from '../documents/documents.service';
+
+export { resolveProfileIdFromUserId } from '../../utils/profile';
 
 export type FollowStatus = 'accepted' | 'pending' | 'rejected' | null;
 
@@ -79,20 +82,6 @@ async function resolveProfileIdFromUsername(username: string): Promise<string> {
     .limit(1);
 
   if (!profile || profile.deletedAt !== null) {
-    throw new NotFoundError('Profile not found');
-  }
-
-  return profile.id;
-}
-
-export async function resolveProfileIdFromUserId(userId: string): Promise<string> {
-  const [profile] = await db
-    .select({ id: profiles.id })
-    .from(profiles)
-    .where(eq(profiles.userId, userId))
-    .limit(1);
-
-  if (!profile) {
     throw new NotFoundError('Profile not found');
   }
 
