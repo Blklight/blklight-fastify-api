@@ -1,4 +1,4 @@
-import { eq, and, asc, desc, lt, sql, isNull } from 'drizzle-orm';
+import { eq, and, asc, desc, lt, sql, isNull, count } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../db/index';
 import { chatServers, chatServerMembers, chatChannels, chatMessages, ChatServer, ChatServerMember, ChatChannel, ChatMessage } from './chat.schema';
@@ -624,7 +624,12 @@ export async function listMessages(
     ? encodeCursor(lastResult.createdAt, lastResult.id)
     : null;
 
-  return { items, nextCursor, total: items.length };
+  const [totalResult] = await db
+    .select({ count: count() })
+    .from(chatMessages)
+    .where(eq(chatMessages.channelId, channelId));
+
+  return { items, nextCursor, total: Number(totalResult?.count ?? 0) };
 }
 
 /**
