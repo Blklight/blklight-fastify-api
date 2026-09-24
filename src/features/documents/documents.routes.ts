@@ -6,6 +6,7 @@ import {
   publishDocument,
   softDeleteDocument,
   getMyDocuments,
+  getMyDocumentById,
   getPublicFeed,
   getPublicDocument,
 } from './documents.service';
@@ -153,6 +154,15 @@ const DOCUMENT_WITH_STYLE_SCHEMA = {
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
     style: STYLE_SCHEMA,
+  },
+};
+
+const MY_DOCUMENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    ...DOCUMENT_WITH_STYLE_SCHEMA.properties,
+    category: CATEGORY_REF_SCHEMA,
+    tags: { type: 'array', items: TAG_REF_SCHEMA },
   },
 };
 
@@ -338,6 +348,43 @@ export default async function documentRoutes(app: FastifyInstance) {
         data: documents,
         error: null,
         message: 'Documents retrieved',
+      });
+    });
+
+    app.get('/:id', {
+      schema: {
+        summary: 'Get one of my documents by ID',
+        description: 'Returns a full document owned by the caller (draft, published or archived), including style, category and tags. Used to reopen a document in the editor.',
+        tags: ['documents'],
+        params: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              data: MY_DOCUMENT_SCHEMA,
+              error: { type: 'null' },
+              message: { type: 'string' },
+            },
+          },
+        },
+      },
+    }, async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+      const { userId } = request.user;
+      const { id } = request.params;
+
+      const authorId = await resolveProfileIdFromUserId(userId);
+      const document = await getMyDocumentById(authorId, id);
+
+      reply.send({
+        data: document,
+        error: null,
+        message: 'Document retrieved',
       });
     });
 

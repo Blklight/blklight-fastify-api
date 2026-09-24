@@ -1078,6 +1078,7 @@ Apps available at launch (seeded in `db/seed.ts`):
 | Method | Endpoint                      | Auth | Description                   |
 | ------ | ----------------------------- | ---- | ----------------------------- |
 | GET    | /api/v1/documents/me          | Yes  | List my documents (paginated) |
+| GET    | /api/v1/documents/:id         | Yes  | Get one of my documents (full, for editor) |
 | POST   | /api/v1/documents             | Yes  | Create document               |
 | PATCH  | /api/v1/documents/:id         | Yes  | Update document               |
 | PATCH  | /api/v1/documents/:id/publish | Yes  | Publish document              |

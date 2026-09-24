@@ -44,6 +44,11 @@ export interface DocumentWithStyle {
   };
 }
 
+export interface MyDocumentDetail extends DocumentWithStyle {
+  category: { id: string; name: string; slug: string } | null;
+  tags: { id: string; name: string; slug: string }[];
+}
+
 export interface DocumentSummary {
   id: string;
   title: string;
@@ -427,6 +432,34 @@ export async function getMyDocuments(
   }));
 }
 
+async function getDocumentStyleMap(documentId: string): Promise<DocumentWithStyle['style']> {
+  const styleResult = await db
+    .select()
+    .from(documentStyles)
+    .where(eq(documentStyles.documentId, documentId))
+    .limit(1);
+
+  const style = styleResult[0] ?? {
+    typography: 'sans',
+    paperStyle: null,
+    paperTexture: null,
+    coverSettings: null,
+    documentHeader: null,
+    documentFooter: null,
+    documentSignature: null,
+  };
+
+  return {
+    typography: style.typography,
+    paperStyle: style.paperStyle as Record<string, unknown> | null,
+    paperTexture: style.paperTexture as Record<string, unknown> | null,
+    coverSettings: style.coverSettings as Record<string, unknown> | null,
+    documentHeader: style.documentHeader as Record<string, unknown> | null,
+    documentFooter: style.documentFooter as Record<string, unknown> | null,
+    documentSignature: style.documentSignature as Record<string, unknown> | null,
+  };
+}
+
 async function getDocumentById(documentId: string, authorId: string): Promise<DocumentWithStyle> {
   const docResult = await db
     .select({
@@ -455,36 +488,66 @@ async function getDocumentById(documentId: string, authorId: string): Promise<Do
   }
 
   const doc = docResult[0]!;
-
-  const styleResult = await db
-    .select()
-    .from(documentStyles)
-    .where(eq(documentStyles.documentId, documentId))
-    .limit(1);
-
-  const style = styleResult[0] ?? {
-    typography: 'sans',
-    paperStyle: null,
-    paperTexture: null,
-    coverSettings: null,
-    documentHeader: null,
-    documentFooter: null,
-    documentSignature: null,
-  };
+  const style = await getDocumentStyleMap(documentId);
 
   return {
     ...doc,
     content: doc.content as Record<string, unknown> | null,
     authorship: doc.authorship as Authorship | null,
-    style: {
-      typography: style.typography,
-      paperStyle: style.paperStyle as Record<string, unknown> | null,
-      paperTexture: style.paperTexture as Record<string, unknown> | null,
-      coverSettings: style.coverSettings as Record<string, unknown> | null,
-      documentHeader: style.documentHeader as Record<string, unknown> | null,
-      documentFooter: style.documentFooter as Record<string, unknown> | null,
-      documentSignature: style.documentSignature as Record<string, unknown> | null,
-    },
+    style,
+  };
+}
+
+/**
+ * Get a full document owned by the caller, for reopening it in the editor.
+ * Draft, published and archived documents are all readable by their owner.
+ * @param authorId - The caller's profile ID
+ * @param documentId - The document ID
+ * @returns The full document with style, category and tags
+ * @throws NotFoundError if the document does not exist, is soft-deleted, or belongs to another author
+ */
+export async function getMyDocumentById(authorId: string, documentId: string): Promise<MyDocumentDetail> {
+  const docResult = await db
+    .select({
+      id: documents.id,
+      authorId: documents.authorId,
+      typeId: documents.typeId,
+      typeName: documentTypes.name,
+      status: documents.status,
+      title: documents.title,
+      abstract: documents.abstract,
+      content: documents.content,
+      coverImageUrl: documents.coverImageUrl,
+      slug: documents.slug,
+      authorship: documents.authorship,
+      publishedAt: documents.publishedAt,
+      createdAt: documents.createdAt,
+      updatedAt: documents.updatedAt,
+    })
+    .from(documents)
+    .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
+    .limit(1);
+
+  if (docResult.length === 0 || docResult[0]!.authorId !== authorId) {
+    throw new NotFoundError('Document not found');
+  }
+
+  const doc = docResult[0]!;
+
+  const [style, category, tags] = await Promise.all([
+    getDocumentStyleMap(documentId),
+    getDocumentCategory(documentId),
+    getDocumentTags(documentId),
+  ]);
+
+  return {
+    ...doc,
+    content: doc.content as Record<string, unknown> | null,
+    authorship: doc.authorship as Authorship | null,
+    style,
+    category: category ? { id: category.id, name: category.name, slug: category.slug } : null,
+    tags: tags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
   };
 }
 
