@@ -10,3 +10,12 @@ coverage/
 ADMIN_ROUTES.md
 opencode-session.txt
 scripts/
+
+# Investigation reports (not versioned)
+_investigation/
+AI_PROJECT_REVIEW.md
+CHAT_FOCUSED_ROADMAP.md
+DIAGNOSTICO_WS.md
+IMPROVEMENT_ROADMAP.md
+docs/*_REPORT.md
+docs/ROUTES_INVENTORY.md

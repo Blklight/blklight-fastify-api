@@ -77,6 +77,50 @@ GET /health
 | PATCH | /api/v1/profiles/me | Yes | Update own profile |
 | DELETE | /api/v1/profiles/me | Yes | Delete own account |
 
+## Authorization
+
+### Role-based Access Control
+
+Each user has a `role` field — `'user'` (default) or `'admin'`. This field is:
+
+- Stored as a PostgreSQL enum (`user_role`) on the `users` table
+- Included in the JWT access token payload on issue (`{ userId, email, role }`)
+- Read by the frontend via Base64 decoding of the access token for UI gating (show/hide admin features)
+- Validated server-side via the `requireAdmin` preHandler hook
+
+### adminGuard Hook
+
+Routes that require admin access use the shared `requireAdmin` preHandler from `src/hooks/admin-guard.ts`. It is always paired with `app.authenticate`:
+
+```ts
+preHandler: [
+  (request, reply) => app.authenticate(request, reply),
+  requireAdmin
+]
+```
+
+### Protected Routes
+
+Admin-only routes (require `role: 'admin'`):
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/v1/categories | Create a category |
+| PATCH | /api/v1/categories/:id | Update a category |
+| DELETE | /api/v1/categories/:id | Delete a category |
+
+All other authenticated routes operate on the requesting user's own resources and require no specific role beyond being authenticated.
+
+### rememberMe Login
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `rememberMe` | boolean | `false` | Extends refresh token TTL to 30 days |
+
+- `rememberMe=false`: refresh token expires in `JWT_REFRESH_EXPIRES_IN` (default 7d)
+- `rememberMe=true`: refresh token expires in `JWT_REFRESH_REMEMBER_TTL` (default 30d)
+- Access token duration is unaffected (always `JWT_ACCESS_EXPIRES_IN`, default 15m)
+
 ### Document Endpoints
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
@@ -124,6 +168,7 @@ See `.env.example` for all required variables:
 - `JWT_REFRESH_SECRET` — Refresh token secret (min 32 chars)
 - `JWT_ACCESS_EXPIRES_IN` — Access token expiry (default: 15m)
 - `JWT_REFRESH_EXPIRES_IN` — Refresh token expiry (default: 7d)
+- `JWT_REFRESH_REMEMBER_TTL` — Refresh token expiry when rememberMe=true (default: 30d)
 - `PORT` — Server port (default: 3000)
 - `NODE_ENV` — Environment (development/production/test)
 - `LOG_LEVEL` — Logging level
