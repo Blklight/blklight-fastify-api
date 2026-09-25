@@ -770,7 +770,7 @@ API docs at http://localhost:3000/docs
 - **authorship jsonb only set on publish** — null while draft
 - **authorship.hmac enables cryptographic verification** via verifyDocument() from signatures.service.ts
 - **publishDocument() resolves profiles.id → users.id internally** before calling signDocument()
-- **Content edits on published documents reset authorship to null and status to draft** — requires re-publish
+- **Content edits on published documents do NOT reset authorship/status/publishedAt** — authorship is immutable metadata of "who published what, when"; its integrity is not actively verified (verifyDocument has no runtime call sites), so it may become stale vs. post-publish edits; revisit if a public authenticity endpoint is ever added
 - **correct_index and expected_output are NEVER returned to readers** — stripped from exercise responses
 - **Code exercises validated via node:vm with 3s timeout** — pure JavaScript and TypeScript (transpiled via esbuild)
 - **SupportedLanguage: 'javascript' | 'typescript'** — extensible for future languages without refactor

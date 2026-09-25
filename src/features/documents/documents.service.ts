@@ -245,13 +245,18 @@ export async function updateDocument(
     updates.typeId = typeResult[0]!.id;
   }
 
+  // Decisão de produto: editar o content de um doc published NÃO reseta
+  // para draft nem invalida authorship. authorship é metadado imutável
+  // de "quem publicou e quando, sobre o conteúdo daquele momento" — não
+  // é (e nunca foi, em produção) uma prova de integridade ativa: nenhum
+  // fluxo recomputa/valida documentHash contra o conteúdo atual em tempo
+  // de leitura (verifyDocument existe mas não é chamado fora de testes
+  // unitários). Se um dia a verificação de integridade for reativada
+  // (ex: endpoint público de autenticidade), este comportamento precisa
+  // ser revisitado — authorship ficará stale em relação a edições feitas
+  // após a publicação original.
   if (data.content !== undefined) {
     updates.content = data.content;
-    if (existingDoc.status === 'published') {
-      updates.authorship = null;
-      updates.status = 'draft';
-      updates.publishedAt = null;
-    }
   }
 
   if (data.typography !== undefined) {
