@@ -11,7 +11,14 @@ import { ValidationError, NotFoundError } from '../../utils/errors';
 import { env } from '../../config/env';
 import { features } from '../../config/features';
 
-const resend = new Resend(env.RESEND_API_KEY);
+let resendClient: Resend | null = null;
+
+function getResend(): Resend {
+  if (!resendClient) {
+    resendClient = new Resend(env.RESEND_API_KEY);
+  }
+  return resendClient;
+}
 
 async function getDailySentCount(): Promise<number> {
   const today = new Date();
@@ -252,7 +259,7 @@ async function processEmailBatch(): Promise<void> {
 
   for (const email of pendingEmails) {
     try {
-      await resend.emails.send({
+      await getResend().emails.send({
         from: env.EMAIL_FROM,
         to: email.to,
         subject: email.subject,
