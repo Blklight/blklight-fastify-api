@@ -876,6 +876,27 @@ API docs at http://localhost:3000/docs
 - **Email-registered users go directly to 'apps' step** — never 'username'
 - **Explicit Drizzle column selection** used in all queries on sensitive tables — never select() with no args
 
+### Known technical debt — workspace + canvas created on register
+
+- **The fact:** every new account creates a personal workspace + canvas atomically in the
+  register transaction — unconditionally, regardless of whether the account ever uses the
+  associated features (currently paused in the frontend: canvas, notes, journals).
+  Email registration: `auth.service.ts` register transaction (`rs`, workspace/canvas inserts
+  at ~424-446). OAuth onboarding: `completeOnboarding()` transaction at ~236-282.
+- **Why it exists:** `canvas.workspaceId` is `notNull().unique()` referencing `workspaces.id`
+  (`canvas.schema.ts`), so a canvas cannot exist without its workspace. Keeping both created
+  in the same register transaction is the simplest shape that satisfies that constraint.
+- **Accepted cost:** idle rows in `workspaces`/`canvas` accumulate for accounts that never
+  use workspace features. Small footprint per row today; revisit if/before volume becomes a
+  concern.
+- **When to revisit:** only when a workspace feature is actually un-paused/built in the
+  frontend. At that moment, evaluate making workspace + canvas lazy (created on first use)
+  instead of at register — and in the same move consider dropping the transactional guarantee
+  that a profile always owns a workspace.
+- **Where to look when the time comes:** `src/features/auth/auth.service.ts` (the register and
+  `completeOnboarding()` transactions) and `src/features/canvas/canvas.schema.ts` (the
+  `notNull().unique()` FK). See also the workspace/canvas decision bullets above.
+
 ## Chat Realtime (WebSocket)
 
 - **@fastify/websocket** registered in app.ts before all route plugins — required for `websocket: true` routes
