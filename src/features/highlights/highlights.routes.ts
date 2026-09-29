@@ -16,6 +16,53 @@ import {
 } from './highlights.service';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 
+const SELECTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    text: { type: 'string' },
+    color: { type: 'string' },
+    position: {
+      type: 'object',
+      properties: {
+        nodeIndex: { type: 'number' },
+        offsetStart: { type: 'number' },
+        offsetEnd: { type: 'number' },
+      },
+    },
+  },
+};
+
+const DOCUMENT_REF_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    title: { type: 'string' },
+    slug: { type: 'string' },
+    authorUsername: { type: 'string' },
+  },
+};
+
+const HIGHLIGHT_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    profileId: { type: 'string' },
+    documentId: { type: 'string' },
+    selection: SELECTION_SCHEMA,
+    annotation: { type: ['object', 'null'], additionalProperties: true },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+};
+
+const HIGHLIGHT_GROUP_SCHEMA = {
+  type: 'object',
+  properties: {
+    document: DOCUMENT_REF_SCHEMA,
+    highlights: { type: 'array', items: HIGHLIGHT_SCHEMA },
+  },
+};
+
 export default async function highlightRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     await app.authenticate(request, reply);
@@ -126,7 +173,14 @@ export default async function highlightRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: {
+              type: 'object',
+              properties: {
+                items: { type: 'array', items: HIGHLIGHT_GROUP_SCHEMA },
+                nextCursor: { type: ['string', 'null'] },
+                total: { type: 'number' },
+              },
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },

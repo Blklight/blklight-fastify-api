@@ -8,6 +8,22 @@ import {
   getNoteById,
 } from './notes.service';
 
+const NOTE_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    canvasId: { type: 'string' },
+    title: { type: ['string', 'null'] },
+    content: { type: 'string' },
+    type: { type: 'string' },
+    language: { type: ['string', 'null'] },
+    color: { type: 'string' },
+    deletedAt: { type: ['string', 'null'] },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+};
+
 export default async function noteRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     await app.authenticate(request, reply);
@@ -91,7 +107,14 @@ export default async function noteRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: {
+              type: 'object',
+              properties: {
+                items: { type: 'array', items: NOTE_SCHEMA },
+                nextCursor: { type: ['string', 'null'] },
+                total: { type: 'number' },
+              },
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },

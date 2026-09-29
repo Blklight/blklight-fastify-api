@@ -3,6 +3,20 @@ import { updateColorLabelsSchema } from './workspace.zod';
 import { getMyWorkspace, updateColorLabels } from './workspace.service';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 
+const WORKSPACE_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    ownerId: { type: 'string' },
+    type: { type: 'string' },
+    name: { type: 'string' },
+    isPersonal: { type: 'boolean' },
+    colorLabels: { type: ['object', 'null'], additionalProperties: { type: 'string' } },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+};
+
 export default async function workspaceRoutes(app: FastifyInstance) {
   app.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
     await app.authenticate(request, reply);
@@ -16,7 +30,20 @@ export default async function workspaceRoutes(app: FastifyInstance) {
         200: {
           type: 'object',
           properties: {
-            data: { type: 'object' },
+            data: {
+              type: 'object',
+              properties: {
+                workspace: WORKSPACE_SCHEMA,
+                counts: {
+                  type: 'object',
+                  properties: {
+                    notes: { type: 'number' },
+                    highlights: { type: 'number' },
+                    journals: { type: 'number' },
+                  },
+                },
+              },
+            },
             error: { type: 'null' },
             message: { type: 'string' },
           },

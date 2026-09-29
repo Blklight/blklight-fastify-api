@@ -1,9 +1,11 @@
-import { eq, and, count, sql } from 'drizzle-orm';
+import { eq, and, count, sql, isNull } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { workspaces, Workspace } from './workspace.schema';
 import { highlights } from '../highlights/highlights.schema';
 import { profiles } from '../profiles/profiles.schema';
 import { journals } from '../journals/journals.schema';
+import { canvas } from '../canvas/canvas.schema';
+import { notes } from '../notes/notes.schema';
 import { ValidationError, NotFoundError } from '../../utils/errors';
 import { NOTE_COLORS } from '../../config/note-colors';
 import type { UpdateColorLabelsInput } from './workspace.zod';
@@ -43,10 +45,19 @@ export async function getMyWorkspace(profileId: string): Promise<WorkspaceSummar
     throw new ValidationError('Workspace not found');
   }
 
+  const [canvasRow] = await db
+    .select({ id: canvas.id })
+    .from(canvas)
+    .where(eq(canvas.workspaceId, ws.id))
+    .limit(1);
+
   const [notesCount] = await db
     .select({ count: count() })
-    .from(sql`notes`)
-    .where(sql`workspace_id = ${ws.id} AND deleted_at IS NULL`)
+    .from(notes)
+    .where(and(
+      eq(notes.canvasId, canvasRow?.id ?? ''),
+      isNull(notes.deletedAt)
+    ))
     .limit(1);
 
   const [highlightsCount] = await db
