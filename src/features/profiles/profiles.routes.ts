@@ -4,6 +4,7 @@ import { getPublicProfile, getOwnProfile, updateProfile, deleteAccount } from '.
 import { getAuthorPublicDocuments } from '../documents/documents.service';
 import { authorFeedQuerySchema } from '../documents/documents.zod';
 import { env } from '../../config/env';
+import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
@@ -145,7 +146,17 @@ export default async function profileRoutes(app: FastifyInstance) {
       });
     }
 
-    const result = await getAuthorPublicDocuments(username, parsed.data);
+    // Optional auth for the same reason as GET /:username — a private
+    // author's documents are only listed for the author or accepted followers.
+    let viewerProfileId: string | undefined;
+    try {
+      await request.jwtVerify();
+      viewerProfileId = await resolveProfileIdFromUserId(request.user.userId);
+    } catch {
+      viewerProfileId = undefined;
+    }
+
+    const result = await getAuthorPublicDocuments(username, parsed.data, viewerProfileId);
 
     reply.send({
       data: result,

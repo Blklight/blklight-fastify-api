@@ -241,7 +241,18 @@ export default async function documentRoutes(app: FastifyInstance) {
       });
     }
 
-    const result = await getPublicFeed(parsed.data);
+    // Auth is optional here: anonymous visitors get the feed without documents
+    // from private authors, while an accepted follower of a private author
+    // still sees them. Same try/catch pattern used by /:username/:slug.
+    let profileId: string | undefined;
+    try {
+      await request.jwtVerify();
+      profileId = await resolveProfileIdFromUserId(request.user.userId);
+    } catch {
+      profileId = undefined;
+    }
+
+    const result = await getPublicFeed(parsed.data, profileId);
 
     reply.send({
       data: result,

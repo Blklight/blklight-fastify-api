@@ -843,6 +843,13 @@ API docs at http://localhost:3000/docs
 - **Follow counts always computed via COUNT(\*)** — never stored in profiles
 - **Rejected follow requests are hard deleted** — not kept as 'rejected'
 - **getFollowingFeed excludes documents from private profiles**
+- **Private authors' documents are hidden from public reads** — visible only to the author and accepted followers, mirroring getPublicProfile
+- **getPublicDocument throws NotFoundError for private authors** — same 404 as a missing slug, so a blocked document is indistinguishable from a nonexistent one
+- **getPublicFeed filters private authors inside the shared conditions list** — items and total both exclude them, so the count never leaks hidden documents
+- **getAuthorPublicDocuments returns an empty result (not 404) for private authors** — the profile itself stays reachable, getPublicProfile redacts it rather than hiding it
+- **GET /api/v1/documents and GET /profiles/:username/documents accept optional auth** — same jwtVerify try/catch pattern, needed so accepted followers still see private authors' documents
+- **canViewAuthor() is the single in-process privacy check** — non-private author always visible; private author requires viewer === author or follow status 'accepted'
+- **buildAuthorVisibilityCondition() mirrors canViewAuthor() in SQL** — an accepted-follow EXISTS subquery, required because the feed count query is separate from the page query
 - **GET /profiles/:username accepts optional auth** — for is_following field
 - **is_following = null for unauthenticated** — not false
 - **follow_status shows pending state** — useful for follow button UI

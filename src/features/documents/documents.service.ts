@@ -12,6 +12,8 @@ import { ValidationError, NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor, encodeFeedCursor, decodeFeedCursor } from '../../utils/cursor';
 import { generateSlug, resolveUniqueSlug } from '../../utils/slug';
 import { getLikesCount } from '../likes/likes.service';
+import { getFollowStatus } from '../follows/follows.service';
+import { follows } from '../follows/follows.schema';
 import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
 import { getDocumentCategory, setDocumentCategory, removeDocumentCategory } from '../categories/categories.service';
 import { getExercises } from '../tutorial-exercises/tutorial-exercises.service';
@@ -90,6 +92,66 @@ async function isDocumentSlugTaken(authorId: string, slug: string, excludeId?: s
     .limit(1);
 
   return existing.length > 0;
+}
+
+/**
+ * Resolve whether a document's author profile is visible to the viewer under
+ * the product privacy rule. A non-private author is always visible. A private
+ * author is only visible to the author themselves or to a viewer with an
+ * accepted follow. Mirrors the logic in getPublicProfile / getFollowers.
+ * @param authorProfileId - The profile ID of the document's author
+ * @param authorIsPrivate - Whether the author's profile is private
+ * @param viewerProfileId - Optional viewer's profile ID (from JWT)
+ * @returns True when the viewer may see documents from this author
+ */
+async function canViewAuthor(
+  authorProfileId: string,
+  authorIsPrivate: boolean,
+  viewerProfileId?: string
+): Promise<boolean> {
+  if (!authorIsPrivate) {
+    return true;
+  }
+
+  if (!viewerProfileId) {
+    return false;
+  }
+
+  if (viewerProfileId === authorProfileId) {
+    return true;
+  }
+
+  return (await getFollowStatus(viewerProfileId, authorProfileId)) === 'accepted';
+}
+
+/**
+ * Build the SQL condition that hides documents from private authors the viewer
+ * is not allowed to see. Applied inside the shared `conditions` list (not only
+ * the page query) so the feed's `total` count matches the visible result set.
+ * @param viewerProfileId - Optional viewer's profile ID (from JWT)
+ * @returns SQL condition to AND into the feed queries
+ */
+function buildAuthorVisibilityCondition(viewerProfileId?: string): SQL {
+  const publicAuthor = ne(profiles.isPrivate, true);
+
+  if (!viewerProfileId) {
+    return publicAuthor;
+  }
+
+  const followsAuthor = exists(
+    db
+      .select({ matches: sql`1` })
+      .from(follows)
+      .where(
+        and(
+          eq(follows.followerId, viewerProfileId),
+          eq(follows.followingId, documents.authorId),
+          eq(follows.status, 'accepted')
+        )!
+      )
+  );
+
+  return or(publicAuthor, eq(documents.authorId, viewerProfileId), followsAuthor)!;
 }
 
 function getDefaultStyles(typeName: string): Partial<NewDocumentStyle> {
@@ -651,16 +713,20 @@ export interface DocumentFull {
 
 /**
  * Get public feed of published documents with cursor-based pagination.
+ * Documents from private authors are only included when the viewer is that
+ * author or an accepted follower; anonymous viewers never see them.
  * @param params - Feed parameters (cursor, limit, type, author, q, sort, category, tag)
+ * @param viewerProfileId - Optional viewer's profile ID (from JWT)
  * @returns Feed result with items, nextCursor, and total count
  */
-export async function getPublicFeed(params: FeedParams): Promise<FeedResult> {
+export async function getPublicFeed(params: FeedParams, viewerProfileId?: string): Promise<FeedResult> {
   const limit = Math.min(params.limit ?? 20, 50);
   const sort = params.sort ?? 'recent';
   const conditions: SQL[] = [];
 
   conditions.push(eq(documents.status, 'published'));
   conditions.push(isNull(documents.deletedAt));
+  conditions.push(buildAuthorVisibilityCondition(viewerProfileId));
 
   if (params.type) {
     conditions.push(eq(documentTypes.name, params.type));
@@ -849,6 +915,8 @@ export async function getPublicDocument(username: string, slug: string, profileI
       displayName: profiles.displayName,
       avatarUrl: profiles.avatarUrl,
       authorship: documents.authorship,
+      authorProfileId: profiles.id,
+      authorIsPrivate: profiles.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
@@ -871,6 +939,15 @@ export async function getPublicDocument(username: string, slug: string, profileI
   }
 
   const doc = docResult[0]!;
+
+  // Private authors stay hidden from everyone but themselves and accepted
+  // followers. The same 404 as a missing slug is used so a blocked document
+  // is indistinguishable from one that does not exist.
+  const visible = await canViewAuthor(doc.authorProfileId, doc.authorIsPrivate, profileId);
+  if (!visible) {
+    throw new NotFoundError('Document not found');
+  }
+
   const likesData = await getLikesCount(doc.id, profileId);
   const docTags = await getDocumentTags(doc.id);
   const docCategory = await getDocumentCategory(doc.id);
@@ -934,12 +1011,19 @@ export async function getPublicDocument(username: string, slug: string, profileI
 
 /**
  * Get published documents by a specific author with cursor-based pagination.
+ * A private author returns an empty result for anyone but the author
+ * themselves and accepted followers.
  * @param username - The author's username
  * @param params - Feed parameters (cursor, limit, type)
+ * @param viewerProfileId - Optional viewer's profile ID (from JWT)
  * @returns Feed result with items, nextCursor, and total count
  * @throws NotFoundError if profile not found or deleted
  */
-export async function getAuthorPublicDocuments(username: string, params: AuthorFeedParams): Promise<FeedResult> {
+export async function getAuthorPublicDocuments(
+  username: string,
+  params: AuthorFeedParams,
+  viewerProfileId?: string
+): Promise<FeedResult> {
   const profileResult = await db
     .select()
     .from(profiles)
@@ -958,6 +1042,16 @@ export async function getAuthorPublicDocuments(username: string, params: AuthorF
   }
 
   const profile = profileResult[0]!;
+
+  // Same privacy rule as the public read and feed: a private author's
+  // documents are omitted for anyone but the author and accepted followers.
+  // An empty result is returned instead of a 404 because the profile itself is
+  // still reachable (getPublicProfile redacts it rather than hiding it).
+  const visible = await canViewAuthor(profile.profiles.id, profile.profiles.isPrivate, viewerProfileId);
+  if (!visible) {
+    return { items: [], nextCursor: null, total: 0 };
+  }
+
   const limit = Math.min(params.limit ?? 20, 50);
   const conditions: ReturnType<typeof eq>[] = [];
 
