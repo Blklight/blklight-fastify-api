@@ -4,7 +4,6 @@ vi.mock('../src/config/env', () => ({
   env: {
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     JWT_ACCESS_SECRET: 'test-access-secret-minimum-32-chars',
-    JWT_REFRESH_SECRET: 'test-refresh-secret-minimum-32-chars',
     JWT_ACCESS_EXPIRES_IN: '15m',
     JWT_REFRESH_EXPIRES_IN: '7d',
     JWT_REFRESH_REMEMBER_TTL: '30d',
@@ -13,6 +12,7 @@ vi.mock('../src/config/env', () => ({
     LOG_LEVEL: 'error',
     CORS_ORIGIN: 'http://localhost:3000',
     CORS_ORIGINS: ['http://localhost:3000'],
+    COOKIE_SAMESITE: 'strict',
     MAX_SESSIONS_PER_USER: 5,
     SIGNATURE_ENCRYPTION_KEY: '0'.repeat(64),
     GITHUB_CLIENT_ID: 'test',

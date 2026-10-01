@@ -11,6 +11,7 @@ import { hashPassword, verifyPassword, generateSecret, generateUserHash, encrypt
 import { ConflictError, UnauthorizedError, NotFoundError, ValidationError } from '../../utils/errors';
 import { parseDurationMs } from '../../utils/duration';
 import { env } from '../../config/env';
+import { REFRESH_COOKIE_NAME, buildRefreshCookieOptions } from '../../config/cookies';
 import { sendVerificationEmail } from '../email/email.service';
 import { features } from '../../config/features';
 import type { FastifyReply } from 'fastify';
@@ -333,20 +334,20 @@ async function createSession(userId: string, rememberMe?: boolean): Promise<stri
   return refreshToken;
 }
 
+/**
+ * Create a session and write the refresh cookie on the reply.
+ * Shared by login, register, the OAuth callback and onboarding so every path
+ * emits identical cookie attributes.
+ * @param userId - The user to create a session for
+ * @param reply - Fastify reply that will carry the Set-Cookie header
+ * @param rememberMe - Whether to extend the refresh token TTL
+ */
 export async function createSessionWithReply(userId: string, reply: FastifyReply, rememberMe?: boolean): Promise<void> {
   const refreshToken = await createSession(userId, rememberMe);
   const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
-  const maxAge = parseExpiration(ttl);
-  const maxAgeMs = maxAge.getTime() - Date.now();
-  const maxAgeSeconds = Math.floor(maxAgeMs / 1000);
-  
-  reply.setCookie('refreshToken', refreshToken, {
-    httpOnly: true,
-    secure: env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    path: '/',
-    maxAge: maxAgeSeconds,
-  });
+  const maxAgeSeconds = (parseExpiration(ttl).getTime() - Date.now()) / 1000;
+
+  reply.setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(maxAgeSeconds));
 }
 
 export async function createUser(

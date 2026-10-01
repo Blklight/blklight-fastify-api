@@ -4,14 +4,11 @@ import { getPublicProfile, getOwnProfile, updateProfile, deleteAccount } from '.
 import { getAuthorPublicDocuments } from '../documents/documents.service';
 import { authorFeedQuerySchema } from '../documents/documents.zod';
 import { env } from '../../config/env';
+import {
+  REFRESH_COOKIE_NAME,
+  buildRefreshCookieClearOptions,
+} from '../../config/cookies';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
-
-const REFRESH_COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'strict' as const,
-  path: '/',
-};
 
 interface JwtPayload {
   userId: string;
@@ -293,7 +290,7 @@ export default async function profileRoutes(app: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     const userId = request.user.userId;
     await deleteAccount(userId);
-    reply.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS).send({
+    reply.clearCookie(REFRESH_COOKIE_NAME, buildRefreshCookieClearOptions()).send({
       data: null,
       error: null,
       message: 'Account deleted',

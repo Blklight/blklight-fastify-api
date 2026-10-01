@@ -67,9 +67,6 @@ const envSchema = z
     JWT_ACCESS_SECRET: z
       .string()
       .min(32, "JWT_ACCESS_SECRET must be at least 32 characters"),
-    JWT_REFRESH_SECRET: z
-      .string()
-      .min(32, "JWT_REFRESH_SECRET must be at least 32 characters"),
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
     JWT_REFRESH_REMEMBER_TTL: z.string().default("30d"),
@@ -81,6 +78,7 @@ const envSchema = z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])
       .default("info"),
     CORS_ORIGIN: z.string().default("http://localhost:3000"),
+    COOKIE_SAMESITE: z.enum(["strict", "lax", "none"]).default("strict"),
     MAX_SESSIONS_PER_USER: z.coerce.number().int().positive().default(5),
     SIGNATURE_ENCRYPTION_KEY: z.string().min(64).optional(),
     GITHUB_CLIENT_ID: z.string().min(1).optional(),

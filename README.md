@@ -165,14 +165,14 @@ See `.env.example` for all required variables:
 
 - `DATABASE_URL` — PostgreSQL connection string
 - `JWT_ACCESS_SECRET` — Access token secret (min 32 chars)
-- `JWT_REFRESH_SECRET` — Refresh token secret (min 32 chars)
 - `JWT_ACCESS_EXPIRES_IN` — Access token expiry (default: 15m)
 - `JWT_REFRESH_EXPIRES_IN` — Refresh token expiry (default: 7d)
 - `JWT_REFRESH_REMEMBER_TTL` — Refresh token expiry when rememberMe=true (default: 30d)
-- `PORT` — Server port (default: 3000)
+- `PORT` — Server port (default: 4000)
 - `NODE_ENV` — Environment (development/production/test)
 - `LOG_LEVEL` — Logging level
-- `CORS_ORIGIN` — CORS origin (default: *)
+- `CORS_ORIGIN` — Comma-separated CORS origin allowlist; `*` is rejected at boot (default: `http://localhost:3000`)
+- `COOKIE_SAMESITE` — SameSite for the httpOnly refresh cookie: strict/lax/none (default: strict)
 - `MAX_SESSIONS_PER_USER` — Max sessions per user (default: 5)
 - `SIGNATURE_ENCRYPTION_KEY` — AES-256-GCM encryption key (64 hex chars)
 

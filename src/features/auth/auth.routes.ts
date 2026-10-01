@@ -15,23 +15,46 @@ import {
   createSessionWithReply,
 } from './auth.service';
 import { users } from './auth.schema';
+import { ForbiddenError } from '../../utils/errors';
 import { verifyEmail, sendVerificationEmail, sendPasswordResetEmail, resetPassword } from '../email/email.service';
 import { requireFeature } from '../../config/features';
 import { env } from '../../config/env';
+import {
+  REFRESH_COOKIE_NAME,
+  buildRefreshCookieOptions,
+  buildRefreshCookieClearOptions,
+} from '../../config/cookies';
 import { parseDurationMs } from '../../utils/duration';
 
-const REFRESH_COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'strict' as const,
-  path: '/',
-};
+/**
+ * Reject cookie-authenticated auth routes when the browser Origin is outside
+ * the CORS allowlist.
+ *
+ * SameSite already blocks the cookie on most cross-site requests, but it is not
+ * a complete CSRF control: SameSite=None allows the cookie cross-site, and some
+ * browsers/clients send the header regardless. Checking Origin closes the gap
+ * for the two routes that act purely on the cookie, without needing a token
+ * pattern or changing the cookie contract.
+ *
+ * Requests without an Origin header (curl, server-to-server, native clients)
+ * are allowed through: the refresh cookie is still required, and a cross-site
+ * attacker in a browser always sends Origin on a CORS-relevant request.
+ * @param request - Incoming request
+ * @throws ForbiddenError if Origin is present and not in the allowlist
+ */
+async function assertAllowedOrigin(request: FastifyRequest): Promise<void> {
+  const origin = request.headers.origin;
+  if (!origin) {
+    return;
+  }
 
-function buildCookieOptions(maxAge?: number) {
-  return {
-    ...REFRESH_COOKIE_OPTIONS,
-    ...(maxAge ? { maxAge } : {}),
-  };
+  if (!env.CORS_ORIGINS.includes(origin)) {
+    throw new ForbiddenError('Origin not allowed');
+  }
+}
+
+function parseRefreshMaxAge(expiresIn: string): number {
+  return Math.round(parseDurationMs(expiresIn) / 1000);
 }
 
 export default async function authRoutes(app: FastifyInstance) {
@@ -121,11 +144,14 @@ export default async function authRoutes(app: FastifyInstance) {
     const authSession = await buildAuthSession(user.id, accessToken);
 
     const maxAge = parseRefreshMaxAge(env.JWT_REFRESH_EXPIRES_IN);
-    reply.code(201).setCookie('refreshToken', refreshToken, buildCookieOptions(maxAge)).send({
-      data: authSession,
-      error: null,
-      message: 'User registered successfully',
-    });
+    reply
+      .code(201)
+      .setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(maxAge))
+      .send({
+        data: authSession,
+        error: null,
+        message: 'User registered successfully',
+      });
   });
 
   app.post('/login', {
@@ -215,7 +241,7 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
     const maxAge = parseRefreshMaxAge(ttl);
-    reply.setCookie('refreshToken', refreshToken, buildCookieOptions(maxAge)).send({
+    reply.setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(maxAge)).send({
       data: authSession,
       error: null,
       message: 'Login successful',
@@ -223,6 +249,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/refresh', {
+    onRequest: assertAllowedOrigin,
     schema: {
       summary: 'Refresh access token',
       tags: ['auth'],
@@ -267,7 +294,7 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const refreshToken = request.cookies.refreshToken;
+    const refreshToken = request.cookies[REFRESH_COOKIE_NAME];
     if (!refreshToken) {
       return reply.code(401).send({
         data: null,
@@ -292,6 +319,7 @@ export default async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/logout', {
+    onRequest: assertAllowedOrigin,
     schema: {
       summary: 'Logout and invalidate refresh token',
       tags: ['auth'],
@@ -307,12 +335,12 @@ export default async function authRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const refreshToken = request.cookies.refreshToken;
+    const refreshToken = request.cookies[REFRESH_COOKIE_NAME];
     if (refreshToken) {
       await logout(refreshToken);
     }
 
-    reply.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS).send({
+    reply.clearCookie(REFRESH_COOKIE_NAME, buildRefreshCookieClearOptions()).send({
       data: null,
       error: null,
       message: 'Logged out successfully',
@@ -690,8 +718,4 @@ export default async function authRoutes(app: FastifyInstance) {
       message: 'Password reset successfully. Please log in again.',
     });
   });
-}
-
-function parseRefreshMaxAge(expiresIn: string): number {
-  return Math.round(parseDurationMs(expiresIn) / 1000);
 }
