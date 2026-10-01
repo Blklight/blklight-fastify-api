@@ -15,6 +15,52 @@ const booleanFromEnvDefault = (defaultValue: boolean) => {
   return stringOrBool.default(defaultValue);
 };
 
+/**
+ * Split a comma-separated env value into trimmed, non-empty entries.
+ * @param value - Raw env value, e.g. "http://a.com,http://b.com"
+ * @returns Array of entries with surrounding whitespace and blanks removed
+ */
+const splitList = (value: string): string[] =>
+  value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+/**
+ * Normalize one allowlist entry to a canonical bare origin (scheme://host[:port]).
+ * Rejects the wildcard and anything that is not an http(s) origin without path,
+ * query, hash or credentials, so @fastify/cors can echo the browser origin back
+ * verbatim alongside credentials: true.
+ * @param value - Single allowlist entry
+ * @returns Canonical origin string, or null when the entry is not usable
+ */
+const canonicalizeOrigin = (value: string): string | null => {
+  if (value === "*") {
+    return null;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return null;
+  }
+
+  if (url.username || url.password) {
+    return null;
+  }
+
+  if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+    return null;
+  }
+
+  return url.origin;
+};
+
 const envSchema = z
   .object({
     DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
@@ -34,7 +80,7 @@ const envSchema = z
     LOG_LEVEL: z
       .enum(["fatal", "error", "warn", "info", "debug", "trace"])
       .default("info"),
-    CORS_ORIGIN: z.string().default("*"),
+    CORS_ORIGIN: z.string().default("http://localhost:3000"),
     MAX_SESSIONS_PER_USER: z.coerce.number().int().positive().default(5),
     SIGNATURE_ENCRYPTION_KEY: z.string().min(64).optional(),
     GITHUB_CLIENT_ID: z.string().min(1).optional(),
@@ -58,6 +104,36 @@ const envSchema = z
     ADMIN_PASSWORD: z.string().min(8).optional(),
   })
   .superRefine((data, ctx) => {
+    const corsEntries = splitList(data.CORS_ORIGIN);
+
+    if (corsEntries.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["CORS_ORIGIN"],
+        message: "CORS_ORIGIN must list at least one origin",
+      });
+    }
+
+    for (const entry of corsEntries) {
+      if (entry === "*") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["CORS_ORIGIN"],
+          message:
+            'CORS_ORIGIN cannot be "*": wildcard origins are invalid with cookie credentials. List explicit origins instead, e.g. CORS_ORIGIN=http://localhost:3000',
+        });
+        continue;
+      }
+
+      if (canonicalizeOrigin(entry) === null) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["CORS_ORIGIN"],
+          message: `Invalid origin "${entry}": use a bare origin with scheme and optional port, without path, query, fragment or credentials (e.g. http://localhost:3000)`,
+        });
+      }
+    }
+
     if (data.FEATURE_OAUTH) {
       const oauthFields = [
         "GITHUB_CLIENT_ID",
@@ -101,4 +177,20 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data satisfies z.infer<typeof envSchema>;
+/**
+ * Parsed environment plus derived values.
+ * CORS_ORIGINS is the canonicalized allowlist; CORS_ORIGIN stays available as
+ * the raw string so boot can report the offending value.
+ */
+type Env = z.infer<typeof envSchema> & {
+  /** Canonical origins allowed by @fastify/cors. Never contains "*". */
+  CORS_ORIGINS: string[];
+};
+
+export const env: Env = {
+  ...parsed.data,
+  // Validation above guarantees every entry is canonical, so nulls cannot occur.
+  CORS_ORIGINS: splitList(parsed.data.CORS_ORIGIN)
+    .map(canonicalizeOrigin)
+    .filter((origin): origin is string => origin !== null),
+};

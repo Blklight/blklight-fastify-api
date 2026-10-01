@@ -80,8 +80,12 @@ export async function buildApp() {
     secret: env.JWT_ACCESS_SECRET,
   });
 
+  // origin must be an ARRAY: @fastify/cors only reflects the request origin
+  // (required by credentials: true) when the option is an array/RegExp/function.
+  // A comma-separated string would be treated as one literal origin, and an
+  // array containing "*" collapses back to allow-all.
   await app.register(cors, {
-    origin: env.CORS_ORIGIN,
+    origin: env.CORS_ORIGINS,
     credentials: true,
     methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
   });
