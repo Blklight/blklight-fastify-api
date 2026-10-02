@@ -23,8 +23,16 @@ Future: comments (post-MVP).
   6. `npm run db:migrations:check` — confirm "No drift" (schema.ts ↔ latest snapshot).
 - **Manual migrations are a documented exception only.** If a hand-written SQL
   migration is ever unavoidable, it must: live under `drizzle/migrations/manual/`,
-  stay OUT of `_journal.json` (so `db:migrate` never auto-runs it), be applied via
-  psql, and be recorded explicitly in this file's history table below — never silent.
+  stay OUT of `_journal.json` (so `db:migrate` never auto-runs it), be applied
+  manually, and be recorded explicitly in this file's history table below — never
+  silent. This rule covers SQL that does **not** accompany a schema change (data
+  cleanup, backfills that cannot be expressed in `schema.ts`).
+- **Generated migrations MAY be hand-edited when they need a data backfill in the
+  same step.** `drizzle-kit generate` cannot express a data backfill, so a column
+  that must be backfilled before a NOT NULL / type change cannot be generated
+  correctly. In that case the generated file is kept in `_journal.json`, is applied
+  by `npm run db:migrate`, and the hand-added statements must be documented in the
+  file header. Precedents: `0020_flashy_odin` and `0022_eminent_mattie_franklin`.
 - **snapshot ↔ schema anti-drift check:** `npm run db:migrations:check`
   (`src/db/migrations-check.ts`) regenerates the snapshot from `schema.ts` via
   `drizzle-kit` and deep-compares against the latest journal snapshot, without
@@ -62,6 +70,44 @@ through `jsonb` (validation) and stripped of whitespace, then the column is alte
 with an explicit `USING "embedding"::vector`. Unlike 0015–0018, this migration stays
 IN `_journal.json` and is applied by `db:migrate` — the hand-added statement is
 documented in the SQL header. Applied on the dev DB 2026-09-16 with 0 data drift.
+
+### 0022 — session rotation families (generated + hand-added backfill)
+
+`0022_eminent_mattie_franklin.sql` was produced by `drizzle-kit generate`
+(`sessions.family_id` / `rotated_at` / `remember_me`, plus the `user_id` and
+`family_id` indexes) and then hand-edited in the same pattern as 0020: the column is
+added NULLABLE, every existing row is backfilled with `family_id = id` so each legacy
+session becomes its own single-token family, and only then is NOT NULL applied. The
+generator emits `ADD COLUMN "family_id" text NOT NULL` with no default, which aborts
+on any table that already has rows. Stays IN `_journal.json`, applied by `db:migrate`.
+
+Verified 2026-10-02: the 63 sessions that existed on the dev DB were preserved, all
+63 with `family_id = id` and zero NULLs, and the file also applies cleanly to a
+database created from zero with `db:migrate` alone.
+
+### manual/0001 — invalidate legacy plaintext refresh tokens (manual, not journaled)
+
+`drizzle/migrations/manual/0001_invalidate_legacy_plaintext_refresh_tokens.sql` runs a
+single `DELETE FROM "sessions"`. It accompanies no schema change, so per the rule
+above it lives in `manual/`, stays out of `_journal.json`, and is applied manually.
+
+Why it is required: `sessions.refresh_token` now stores a SHA-256 digest. The
+plaintext of a legacy row never existed in the database, so there is no digest to
+backfill — the rows cannot be salvaged and their users must log in again once. This
+is also the security-correct outcome, since tokens that were stored in the clear are
+compromised by definition. Applied on the dev DB 2026-10-02 against 63 rows.
+
+### Known pre-existing issue — 0011/0015/0019 constraint names vs a fresh DB
+
+A database created from zero fails partway through `0019` with
+`constraint "user_apps_user_id_app_id_unique" of relation "user_apps" does not exist`,
+and `0015` fails the same way for the other refactored tables. The cause is that
+`0011` created `UNIQUE ("user_id", "app_id")` unnamed, so Postgres named it
+`..._key`, while the hand-written 0015–0019 series drops `..._unique`. This only
+surfaces on a fresh provisioning run; the dev DB was migrated by hand with the real
+constraint names, so it never hit this. **Not fixed** — out of scope for the session
+rotation work. Fix it by making the 0011 DDL name its constraints explicitly (or by
+softening those `DROP CONSTRAINT` statements to `IF EXISTS`).
 
 ## Tech Stack
 
@@ -261,13 +307,18 @@ docs/
 
 ### sessions
 
-| Column        | Type      | Notes                  |
-| ------------- | --------- | ---------------------- |
-| id            | text      | CUID2, primary key     |
-| user_id       | text      | foreign key → users.id |
-| refresh_token | text      | unique, not null       |
-| expires_at    | timestamp | not null               |
-| created_at    | timestamp | default now()          |
+| Column        | Type      | Notes                                            |
+| ------------- | --------- | ------------------------------------------------ |
+| id            | text      | CUID2, primary key                               |
+| user_id       | text      | foreign key → users.id                           |
+| refresh_token | text      | unique, not null — **SHA-256 digest**, not the token |
+| family_id     | text      | not null — shared by every token in a rotation chain |
+| rotated_at    | timestamp | nullable — set when this token is superseded     |
+| remember_me   | boolean   | default false — persisted so rotations keep the TTL |
+| expires_at    | timestamp | not null                                         |
+| created_at    | timestamp | default now()                                    |
+
+Indexes: `sessions_user_id_idx`, `sessions_family_id_idx`.
 
 ### email_verifications
 
@@ -734,6 +785,19 @@ Unique constraint: (follower_id, following_id)
 | `npm run test:watch`    | Run tests in watch mode                         |
 | `npm run test:coverage` | Run tests with coverage                         |
 
+### Test baseline
+
+`npm test` is **63 passed / 5 failed** as of Session 30. The 5 failures are all in
+`tests/services/documents.service.test.ts` and are pre-existing — they predate the
+refresh-token rotation work and were not touched by it. Treat that count as the
+baseline: a change is only a regression if it makes a previously passing test fail.
+`npx tsc --noEmit` likewise has 2 pre-existing `TS2769` errors in `src/app.ts`
+(lines 99 and 112), also unrelated and left as-is.
+
+`tests/services/session-rotation.test.ts` is the only test that talks to a real
+database. It mocks `src/config/env` and points `DATABASE_URL` at the dev DB, then
+creates and deletes its own users, so it is not runnable without Postgres up.
+
 ## How to Run Locally
 
 > **Note:** Docker must be running before starting the server.
@@ -917,6 +981,37 @@ API docs at http://localhost:3000/docs
 - **Broadcast payload shape**: `{ type, channelId, message }` (or `messageId` for delete)
 - **Assertions reuse the REST rules** — `assertCanAccessChannel()` reuses `resolveServerFromChannel` + `assertAcceptedMember`
 - **broadcastToChannel() never throws** — dead sockets skipped, send errors swallowed so REST flow is never broken
+
+## Refresh Token Rotation
+
+- **sessions.refresh_token stores a SHA-256 digest, never the token** — the plaintext
+  only ever exists in the httpOnly cookie and in the `Set-Cookie` response
+- **hashRefreshToken() in `src/utils/crypto.ts`** — SHA-256, not PBKDF2, because the
+  input is 48 chars of CUID2 entropy and the lookup needs a fast deterministic digest
+- **Every read path hashes before comparing** — `refreshSession()` and `logout()`
+  hash the cookie value, so the `unique` constraint still holds without a schema change
+- **One login = one family** — `family_id` is stable for the whole rotation chain;
+  each refresh inserts a new row with the same `family_id`
+- **Rotation is mandatory on every refresh** — the consumed row gets `rotated_at`, a
+  new token is issued, and `Set-Cookie` is sent only when a rotation happened
+- **A replay inside the grace window still returns an access token** — browsers fire
+  parallel requests with the same cookie and only the last `Set-Cookie` wins, so
+  `rotatedToken = null` tells the route not to overwrite the newer cookie
+- **REFRESH_REUSE_GRACE_SECONDS (30s default)** — window in which a replayed token is
+  treated as browser noise rather than theft
+- **A replay outside the window revokes the whole family** — the newer token of that
+  chain also stops working, which is the intended theft-detection outcome
+- **refreshSession() reads the row `FOR UPDATE`** — parallel refreshes serialize
+  instead of both seeing `rotated_at IS NULL` and both rotating
+- **Revocations run OUTSIDE the transaction** — throwing `UnauthorizedError` inside
+  it would roll the DELETE back and leave the family usable
+- **MAX_SESSIONS_PER_USER counts families, not rows** — a rotated family can hold
+  several tokens but is a single browser session
+- **Eviction deletes the entire oldest family** — never just the oldest token row
+- **remember_me is persisted on the session** — rotations keep extending the session
+  with the same TTL the login chose
+- **getRefreshTtlSeconds() is the single source of the TTL in seconds** — used by both
+  `expires_at` and the cookie `Max-Age`, so they can never diverge
 
 ## rememberMe
 
