@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, pgEnum, text, boolean, timestamp, index } from 'drizzle-orm/pg-core';
 import '../signatures/signatures.schema';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
@@ -19,13 +19,30 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-export const sessions = pgTable('sessions', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull().references(() => users.id),
-  refreshToken: text('refresh_token').notNull().unique(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id),
+    refreshToken: text('refresh_token').notNull().unique(),
+    /**
+     * Stable id shared by every token in one rotation chain. A login, register
+     * or OAuth callback starts a new family; each refresh inserts a new row with
+     * the same family_id. Logout and reuse detection act on the whole family.
+     */
+    familyId: text('family_id').notNull(),
+    /** Set on the superseded token when a rotation happens; null while active. */
+    rotatedAt: timestamp('rotated_at'),
+    /** Persisted so rotations keep extending the session with the same TTL. */
+    rememberMe: boolean('remember_me').default(false).notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index('sessions_user_id_idx').on(table.userId),
+    familyIdIdx: index('sessions_family_id_idx').on(table.familyId),
+  })
+);
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

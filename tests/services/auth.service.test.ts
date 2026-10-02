@@ -80,11 +80,39 @@ describe('auth.service', () => {
   });
 
   describe('logout', () => {
-    it('logout deletes session row', async () => {
+    it('logout deletes every row in the token session family', async () => {
       const { db } = await import('../../src/db/index');
-      
+
+      // Rotation makes a family span several rows, so logout first resolves
+      // the family of the presented token and then deletes by family_id.
+      vi.mocked(db.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ familyId: 'family-1' }]),
+          }),
+        }),
+      } as never);
+
       await logout('refresh-token');
+
+      expect(db.select).toHaveBeenCalled();
       expect(db.delete).toHaveBeenCalled();
+    });
+
+    it('logout is a no-op when the token is unknown', async () => {
+      const { db } = await import('../../src/db/index');
+
+      vi.mocked(db.select).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      } as never);
+
+      await logout('unknown-token');
+
+      expect(db.delete).not.toHaveBeenCalled();
     });
   });
 });

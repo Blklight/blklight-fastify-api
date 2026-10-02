@@ -1,5 +1,5 @@
 import { createId } from '@paralleldrive/cuid2';
-import { eq, and, lt, isNull, gt, or, ne } from 'drizzle-orm';
+import { eq, and, lt, isNull, gt, or, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/index';
 import { users, sessions, NewUser, NewSession, User } from './auth.schema';
 import { profiles } from '../profiles/profiles.schema';
@@ -9,9 +9,12 @@ import { canvas } from '../canvas/canvas.schema';
 import { getUserApps } from '../platform-apps/platform-apps.service';
 import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError, NotFoundError, ValidationError } from '../../utils/errors';
-import { parseDurationMs } from '../../utils/duration';
 import { env } from '../../config/env';
-import { REFRESH_COOKIE_NAME, buildRefreshCookieOptions } from '../../config/cookies';
+import {
+  REFRESH_COOKIE_NAME,
+  buildRefreshCookieOptions,
+  getRefreshTtlSeconds,
+} from '../../config/cookies';
 import { sendVerificationEmail } from '../email/email.service';
 import { features } from '../../config/features';
 import type { FastifyReply } from 'fastify';
@@ -107,10 +110,6 @@ export function getOnboardingStep(user: {
  */
 function isOAuthPlaceholderUsername(username: string | null): boolean {
   return !!username && /^(github|google)_[0-9]+$/.test(username);
-}
-
-function parseExpiration(expiresIn: string): Date {
-  return new Date(Date.now() + parseDurationMs(expiresIn));
 }
 
 export async function registerUser(
@@ -291,6 +290,17 @@ export async function completeOnboarding(userId: string): Promise<User> {
   return user;
 }
 
+/**
+ * Start a new session family for a login, register, OAuth callback or
+ * onboarding completion.
+ *
+ * The session limit counts FAMILIES, not rows: a rotation chain produces many
+ * rows but is one browser session, so it must not evict other devices. When the
+ * limit is reached the oldest family is evicted entirely.
+ * @param userId - The user to create the session for
+ * @param rememberMe - Whether the family uses the longer refresh TTL
+ * @returns The plaintext refresh token to hand to the client cookie
+ */
 async function createSession(userId: string, rememberMe?: boolean): Promise<string> {
   const now = new Date();
 
@@ -303,28 +313,33 @@ async function createSession(userId: string, rememberMe?: boolean): Promise<stri
       )
     );
 
-  const activeSessions = await db
-    .select({ id: sessions.id, createdAt: sessions.createdAt })
+  // One row per family: a rotation chain can hold several tokens but is a
+  // single browser session, so only the family start date is compared.
+  const activeFamilies = await db
+    .select({ familyId: sessions.familyId, oldestTokenAt: sql<Date>`min(${sessions.createdAt})` })
     .from(sessions)
-    .where(eq(sessions.userId, userId));
+    .where(eq(sessions.userId, userId))
+    .groupBy(sessions.familyId)
+    .orderBy(sql`min(${sessions.createdAt})`);
 
-  if (activeSessions.length >= env.MAX_SESSIONS_PER_USER) {
-    const oldest = activeSessions.sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    )[0];
+  if (activeFamilies.length >= env.MAX_SESSIONS_PER_USER) {
+    const oldest = activeFamilies[0];
     if (oldest) {
-      await db.delete(sessions).where(eq(sessions.id, oldest.id));
+      await db.delete(sessions).where(eq(sessions.familyId, oldest.familyId));
     }
   }
 
   const refreshToken = createId() + createId();
-  const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
-  const expiresAt = parseExpiration(ttl);
+  const familyId = createId();
+  const expiresAt = new Date(now.getTime() + getRefreshTtlSeconds(rememberMe) * 1000);
 
   const newSession: NewSession = {
     id: createId(),
     userId,
     refreshToken,
+    familyId,
+    rotatedAt: null,
+    rememberMe: rememberMe ?? false,
     expiresAt,
     createdAt: now,
   };
@@ -344,10 +359,12 @@ async function createSession(userId: string, rememberMe?: boolean): Promise<stri
  */
 export async function createSessionWithReply(userId: string, reply: FastifyReply, rememberMe?: boolean): Promise<void> {
   const refreshToken = await createSession(userId, rememberMe);
-  const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
-  const maxAgeSeconds = (parseExpiration(ttl).getTime() - Date.now()) / 1000;
 
-  reply.setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(maxAgeSeconds));
+  reply.setCookie(
+    REFRESH_COOKIE_NAME,
+    refreshToken,
+    buildRefreshCookieOptions(getRefreshTtlSeconds(rememberMe))
+  );
 }
 
 export async function createUser(
@@ -510,36 +527,151 @@ export async function loginUser(
   return { userId: user.id, refreshToken, role: user.role, email: user.email };
 }
 
-export async function refreshSession(refreshToken: string): Promise<User> {
-  const sessionRows = await db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.refreshToken, refreshToken))
-    .limit(1);
+export interface RefreshSessionResult {
+  user: User;
+  /** Present only when a rotation happened, i.e. when a new token was issued. */
+  rotatedToken: string | null;
+  /** TTL the family was created with, so the caller can refresh the cookie Max-Age. */
+  rememberMe: boolean;
+}
 
-  if (sessionRows.length === 0) {
+/**
+ * Exchange a refresh token for a fresh access token, rotating the token.
+ *
+ * Rotation gives theft detection its teeth: the presented token is marked
+ * consumed and a new one is issued in the same family. If a consumed token
+ * shows up again after the grace window, that token was captured, and the
+ * whole family is destroyed rather than handed another access token.
+ *
+ * Within the grace window a replayed token still succeeds without rotating
+ * again, because a browser legitimately fires several requests in parallel on
+ * the same cookie and only the last Set-Cookie wins. That case returns
+ * rotatedToken = null so the caller does not overwrite the newer cookie.
+ *
+ * The row read is locked FOR UPDATE so parallel refreshes serialize instead of
+ * both observing rotated_at = NULL and each rotating.
+ * @param refreshToken - The plaintext token from the cookie
+ * @returns The user plus the new token when a rotation occurred
+ * @throws UnauthorizedError when the token is unknown, expired or reused late
+ */
+export async function refreshSession(refreshToken: string): Promise<RefreshSessionResult> {
+  /**
+   * Outcome of the locked read, resolved before anything destructive runs.
+   * The revocations happen outside the transaction on purpose: throwing inside
+   * it would roll the DELETE back and leave the family usable, which is the
+   * exact opposite of what reuse detection must do.
+   */
+  type Outcome =
+    | { kind: 'reject' }
+    | { kind: 'revokeSession'; sessionId: string }
+    | { kind: 'revokeFamily'; familyId: string }
+    | { kind: 'replay'; userId: string; rememberMe: boolean }
+    | { kind: 'rotate'; userId: string; rememberMe: boolean; rotatedToken: string };
+
+  const outcome = await db.transaction<Outcome>(async (tx) => {
+    const sessionRows = await tx
+      .select()
+      .from(sessions)
+      .where(eq(sessions.refreshToken, refreshToken))
+      .limit(1)
+      .for('update');
+
+    if (sessionRows.length === 0) {
+      return { kind: 'reject' };
+    }
+
+    const session = sessionRows[0]!;
+    const now = new Date();
+
+    if (session.expiresAt < now) {
+      return { kind: 'revokeSession', sessionId: session.id };
+    }
+
+    if (session.rotatedAt !== null) {
+      const graceMs = env.REFRESH_REUSE_GRACE_SECONDS * 1000;
+      const elapsedMs = now.getTime() - new Date(session.rotatedAt).getTime();
+
+      if (elapsedMs <= graceMs) {
+        return { kind: 'replay', userId: session.userId, rememberMe: session.rememberMe };
+      }
+
+      return { kind: 'revokeFamily', familyId: session.familyId };
+    }
+
+    const rotatedToken = createId() + createId();
+    const expiresAt = new Date(now.getTime() + getRefreshTtlSeconds(session.rememberMe) * 1000);
+
+    await tx
+      .update(sessions)
+      .set({ rotatedAt: now })
+      .where(eq(sessions.id, session.id));
+
+    await tx.insert(sessions).values({
+      id: createId(),
+      userId: session.userId,
+      refreshToken: rotatedToken,
+      familyId: session.familyId,
+      rotatedAt: null,
+      rememberMe: session.rememberMe,
+      expiresAt,
+      createdAt: now,
+    });
+
+    return { kind: 'rotate', userId: session.userId, rememberMe: session.rememberMe, rotatedToken };
+  });
+
+  if (outcome.kind === 'revokeSession') {
+    await db.delete(sessions).where(eq(sessions.id, outcome.sessionId));
+    throw new UnauthorizedError('Refresh token expired');
+  }
+
+  if (outcome.kind === 'revokeFamily') {
+    await db.delete(sessions).where(eq(sessions.familyId, outcome.familyId));
+    console.warn(
+      `Refresh token reuse detected outside the ${env.REFRESH_REUSE_GRACE_SECONDS}s grace window; revoked session family ${outcome.familyId}`
+    );
     throw new UnauthorizedError('Invalid refresh token');
   }
 
-  const session = sessionRows[0]!;
-  if (session.expiresAt < new Date()) {
-    await db.delete(sessions).where(eq(sessions.id, session.id));
-    throw new UnauthorizedError('Refresh token expired');
+  if (outcome.kind === 'reject') {
+    throw new UnauthorizedError('Invalid refresh token');
   }
 
   const userRows = await db
     .select()
     .from(users)
-    .where(eq(users.id, session.userId))
+    .where(eq(users.id, outcome.userId))
     .limit(1);
 
   if (userRows.length === 0) {
     throw new UnauthorizedError('User not found');
   }
 
-  return userRows[0]!;
+  return {
+    user: userRows[0]!,
+    rotatedToken: outcome.kind === 'rotate' ? outcome.rotatedToken : null,
+    rememberMe: outcome.rememberMe,
+  };
 }
 
+/**
+ * Revoke the whole session family behind a refresh token.
+ *
+ * A family can hold several rows once rotation is in play, so deleting only
+ * the row matching the token would leave the browser logged in via the token
+ * the previous refresh handed out.
+ * @param refreshToken - The plaintext token from the cookie
+ */
 export async function logout(refreshToken: string): Promise<void> {
-  await db.delete(sessions).where(eq(sessions.refreshToken, refreshToken));
+  const sessionRows = await db
+    .select({ familyId: sessions.familyId })
+    .from(sessions)
+    .where(eq(sessions.refreshToken, refreshToken))
+    .limit(1);
+
+  if (sessionRows.length === 0) {
+    return;
+  }
+
+  await db.delete(sessions).where(eq(sessions.familyId, sessionRows[0]!.familyId));
 }

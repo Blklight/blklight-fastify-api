@@ -1,4 +1,5 @@
 import { env } from './env';
+import { parseDurationMs } from '../utils/duration';
 
 /**
  * Name of the cookie carrying the session refresh token.
@@ -51,4 +52,22 @@ export function buildRefreshCookieOptions(maxAgeSeconds?: number): RefreshCookie
  */
 export function buildRefreshCookieClearOptions(): RefreshCookieOptions {
   return buildRefreshCookieOptions();
+}
+
+/**
+ * Resolve the refresh session lifetime in whole seconds.
+ *
+ * Single source of truth for the two places that must never disagree: the
+ * cookie Max-Age (client side) and sessions.expires_at (server side). A
+ * divergence would let the browser keep a cookie the server already considers
+ * expired, or drop one that is still valid.
+ *
+ * Returned value is floored, never rounded, so the server-side expiry is never
+ * later than what the browser believes it has.
+ * @param rememberMe - Whether this session uses the longer "remember me" TTL
+ * @returns Lifetime in integer seconds
+ */
+export function getRefreshTtlSeconds(rememberMe: boolean | undefined): number {
+  const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
+  return Math.floor(parseDurationMs(ttl) / 1000);
 }

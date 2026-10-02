@@ -23,8 +23,8 @@ import {
   REFRESH_COOKIE_NAME,
   buildRefreshCookieOptions,
   buildRefreshCookieClearOptions,
+  getRefreshTtlSeconds,
 } from '../../config/cookies';
-import { parseDurationMs } from '../../utils/duration';
 
 /**
  * Reject cookie-authenticated auth routes when the browser Origin is outside
@@ -51,10 +51,6 @@ async function assertAllowedOrigin(request: FastifyRequest): Promise<void> {
   if (!env.CORS_ORIGINS.includes(origin)) {
     throw new ForbiddenError('Origin not allowed');
   }
-}
-
-function parseRefreshMaxAge(expiresIn: string): number {
-  return Math.round(parseDurationMs(expiresIn) / 1000);
 }
 
 export default async function authRoutes(app: FastifyInstance) {
@@ -143,10 +139,9 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const authSession = await buildAuthSession(user.id, accessToken);
 
-    const maxAge = parseRefreshMaxAge(env.JWT_REFRESH_EXPIRES_IN);
     reply
       .code(201)
-      .setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(maxAge))
+      .setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(getRefreshTtlSeconds(false)))
       .send({
         data: authSession,
         error: null,
@@ -239,9 +234,11 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const authSession = await buildAuthSession(userId, accessToken);
 
-    const ttl = rememberMe ? env.JWT_REFRESH_REMEMBER_TTL : env.JWT_REFRESH_EXPIRES_IN;
-    const maxAge = parseRefreshMaxAge(ttl);
-    reply.setCookie(REFRESH_COOKIE_NAME, refreshToken, buildRefreshCookieOptions(maxAge)).send({
+    reply.setCookie(
+      REFRESH_COOKIE_NAME,
+      refreshToken,
+      buildRefreshCookieOptions(getRefreshTtlSeconds(rememberMe))
+    ).send({
       data: authSession,
       error: null,
       message: 'Login successful',
@@ -303,13 +300,24 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const user = await refreshSession(refreshToken);
+    const { user, rotatedToken, rememberMe } = await refreshSession(refreshToken);
     const accessToken = app.jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
     );
 
     const authSession = await buildAuthSession(user.id, accessToken);
+
+    // A replay inside the grace window returns rotatedToken = null: the browser
+    // already holds the newer cookie from the first rotation, and overwriting
+    // it here would hand back a token the server just consumed.
+    if (rotatedToken !== null) {
+      reply.setCookie(
+        REFRESH_COOKIE_NAME,
+        rotatedToken,
+        buildRefreshCookieOptions(getRefreshTtlSeconds(rememberMe))
+      );
+    }
 
     reply.send({
       data: authSession,

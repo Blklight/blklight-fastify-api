@@ -81,6 +81,12 @@ const envSchema = z
     JWT_ACCESS_EXPIRES_IN: z.string().default("15m"),
     JWT_REFRESH_EXPIRES_IN: z.string().default("7d"),
     JWT_REFRESH_REMEMBER_TTL: z.string().default("30d"),
+    /**
+     * Grace window in which a already-rotated refresh token still returns a new
+     * access token instead of being treated as theft. Covers parallel browser
+     * requests racing on the same cookie.
+     */
+    REFRESH_REUSE_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
     PORT: z.coerce.number().int().positive().default(4000),
     NODE_ENV: z
       .enum(["development", "production", "test"])
