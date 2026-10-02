@@ -59,6 +59,7 @@ import {
   logout,
 } from '../../src/features/auth/auth.service';
 import { getRefreshTtlSeconds } from '../../src/config/cookies';
+import { hashRefreshToken } from '../../src/utils/crypto';
 import { UnauthorizedError } from '../../src/utils/errors';
 
 const sql = postgres(SQL_URL, { max: 1 });
@@ -108,17 +109,24 @@ async function login(userId: string, rememberMe?: boolean): Promise<string> {
 }
 
 async function rowsForFamily(userId: string): Promise<
-  { refreshToken: string; rotatedAt: Date | null; expiresAt: Date; rememberMe: boolean }[]
+  { refreshToken: string; familyId: string; rotatedAt: Date | null; expiresAt: Date; rememberMe: boolean }[]
 > {
   return db
     .select({
       refreshToken: sessions.refreshToken,
+      familyId: sessions.familyId,
       rotatedAt: sessions.rotatedAt,
       expiresAt: sessions.expiresAt,
       rememberMe: sessions.rememberMe,
     })
     .from(sessions)
     .where(eq(sessions.userId, userId));
+}
+
+/** sessions.refresh_token stores the SHA-256 digest, so match on the digest. */
+function storedToken(rows: { refreshToken: string }[], plaintext: string): { refreshToken: string } | undefined {
+  const digest = hashRefreshToken(plaintext);
+  return rows.find((r) => r.refreshToken === digest);
 }
 
 beforeAll(() => {
@@ -152,10 +160,10 @@ describe('session rotation', () => {
 
     const rows = await rowsForFamily(userId);
     expect(rows).toHaveLength(2);
-    const familyIds = new Set(rows.map((r) => r.refreshToken));
-    expect(familyIds.size).toBe(2);
+    // Same family, two distinct token digests.
+    expect(new Set(rows.map((r) => r.familyId)).size).toBe(1);
 
-    const consumed = rows.find((r) => r.refreshToken === first);
+    const consumed = storedToken(rows, first);
     expect(consumed?.rotatedAt).not.toBeNull();
   });
 
@@ -178,7 +186,7 @@ describe('session rotation', () => {
     const { rotatedToken: second } = await refreshSession(first);
 
     // Backdate the consumed token so the replay lands outside the 30s window.
-    await sql`UPDATE sessions SET rotated_at = now() - interval '60 seconds' WHERE refresh_token = ${first}`;
+    await sql`UPDATE sessions SET rotated_at = now() - interval '60 seconds' WHERE refresh_token = ${hashRefreshToken(first)}`;
 
     await expect(refreshSession(first)).rejects.toThrow(UnauthorizedError);
 
@@ -206,7 +214,7 @@ describe('session rotation', () => {
     await refreshSession(first);
 
     const rows = await rowsForFamily(userId);
-    const rotated = rows.find((r) => r.refreshToken !== first)!;
+    const rotated = rows.find((r) => r.refreshToken !== hashRefreshToken(first))!;
     expect(rotated.rememberMe).toBe(true);
 
     const expectedSeconds = getRefreshTtlSeconds(true);
@@ -223,7 +231,7 @@ describe('session rotation', () => {
     }
 
     const rows = await rowsForFamily(userId);
-    const families = new Set(rows.map((r) => r.refreshToken));
+    const families = new Set(rows.map((r) => r.familyId));
 
     // 6 logins but only MAX_SESSIONS_PER_USER (5) families survive.
     expect(families.size).toBeLessThanOrEqual(5);
@@ -262,7 +270,7 @@ describe('session rotation', () => {
 
   it('expired session is rejected and cleaned up', async () => {
     const token = await login(userId);
-    await sql`UPDATE sessions SET expires_at = now() - interval '1 day' WHERE refresh_token = ${token}`;
+    await sql`UPDATE sessions SET expires_at = now() - interval '1 day' WHERE refresh_token = ${hashRefreshToken(token)}`;
 
     await expect(refreshSession(token)).rejects.toThrow(UnauthorizedError);
     const rows = await rowsForFamily(userId);

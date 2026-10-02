@@ -100,6 +100,21 @@ export function generateDocumentHash(content: string): string {
 }
 
 /**
+ * Hash a refresh token for storage at rest.
+ *
+ * SHA-256 (not PBKDF2) is the right primitive here because the input is already
+ * 48 chars of CUID2 entropy, not a human-chosen secret: there is nothing to
+ * brute-force, and lookups on the sessions table need a fast deterministic
+ * digest. The token is only ever compared by hash, so a stolen database row is
+ * not usable to authenticate.
+ * @param refreshToken - Plaintext refresh token from the cookie
+ * @returns SHA-256 hash as hex string, the form stored in sessions.refresh_token
+ */
+export function hashRefreshToken(refreshToken: string): string {
+  return createHash('sha256').update(refreshToken).digest('hex');
+}
+
+/**
  * Generate an article signature using HMAC-SHA256.
  * @param userHash - The user's public hash
  * @param documentHash - The document content hash

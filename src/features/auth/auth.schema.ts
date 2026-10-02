@@ -24,6 +24,11 @@ export const sessions = pgTable(
   {
     id: text('id').primaryKey(),
     userId: text('user_id').notNull().references(() => users.id),
+    /**
+     * SHA-256 hex of the refresh token, never the token itself. The plaintext
+     * only ever exists in the httpOnly cookie and in the Set-Cookie response;
+     * a database leak therefore yields no usable session.
+     */
     refreshToken: text('refresh_token').notNull().unique(),
     /**
      * Stable id shared by every token in one rotation chain. A login, register

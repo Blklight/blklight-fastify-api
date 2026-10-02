@@ -7,7 +7,7 @@ import { signatures } from '../signatures/signatures.schema';
 import { workspaces } from '../workspace/workspace.schema';
 import { canvas } from '../canvas/canvas.schema';
 import { getUserApps } from '../platform-apps/platform-apps.service';
-import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret } from '../../utils/crypto';
+import { hashPassword, verifyPassword, generateSecret, generateUserHash, encryptSecret, hashRefreshToken } from '../../utils/crypto';
 import { ConflictError, UnauthorizedError, NotFoundError, ValidationError } from '../../utils/errors';
 import { env } from '../../config/env';
 import {
@@ -336,7 +336,8 @@ async function createSession(userId: string, rememberMe?: boolean): Promise<stri
   const newSession: NewSession = {
     id: createId(),
     userId,
-    refreshToken,
+    // Store only the digest; the caller gets the plaintext for the cookie.
+    refreshToken: hashRefreshToken(refreshToken),
     familyId,
     rotatedAt: null,
     rememberMe: rememberMe ?? false,
@@ -572,7 +573,7 @@ export async function refreshSession(refreshToken: string): Promise<RefreshSessi
     const sessionRows = await tx
       .select()
       .from(sessions)
-      .where(eq(sessions.refreshToken, refreshToken))
+      .where(eq(sessions.refreshToken, hashRefreshToken(refreshToken)))
       .limit(1)
       .for('update');
 
@@ -609,7 +610,7 @@ export async function refreshSession(refreshToken: string): Promise<RefreshSessi
     await tx.insert(sessions).values({
       id: createId(),
       userId: session.userId,
-      refreshToken: rotatedToken,
+      refreshToken: hashRefreshToken(rotatedToken),
       familyId: session.familyId,
       rotatedAt: null,
       rememberMe: session.rememberMe,
@@ -666,7 +667,7 @@ export async function logout(refreshToken: string): Promise<void> {
   const sessionRows = await db
     .select({ familyId: sessions.familyId })
     .from(sessions)
-    .where(eq(sessions.refreshToken, refreshToken))
+    .where(eq(sessions.refreshToken, hashRefreshToken(refreshToken)))
     .limit(1);
 
   if (sessionRows.length === 0) {
