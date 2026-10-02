@@ -27,22 +27,37 @@ const splitList = (value: string): string[] =>
     .filter((entry) => entry.length > 0);
 
 /**
- * Normalize one allowlist entry to a canonical bare origin (scheme://host[:port]).
- * Rejects the wildcard and anything that is not an http(s) origin without path,
- * query, hash or credentials, so @fastify/cors can echo the browser origin back
- * verbatim alongside credentials: true.
+ * Parse one allowlist entry into a URL when possible.
  * @param value - Single allowlist entry
- * @returns Canonical origin string, or null when the entry is not usable
+ * @returns Parsed URL, or null when the entry is not a URL at all
  */
-const canonicalizeOrigin = (value: string): string | null => {
-  if (value === "*") {
+const parseOriginUrl = (value: string): URL | null => {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Suggest the canonical bare origin (scheme://host[:port]) for a rejected entry,
+ * so the boot error can show the exact value the operator should use.
+ *
+ * Covers the common misconfigurations: trailing slash, path, query, fragment,
+ * credentials and a missing http(s) scheme.
+ * @param value - Offending allowlist entry
+ * @returns Suggestion string, or null when nothing sensible can be derived
+ */
+const suggestCanonicalOrigin = (value: string): string | null => {
+  // A "://" that is not http(s) means the operator wrote a real scheme we do
+  // not allow; do not "fix" it by prepending another one.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) && !/^https?:\/\//i.test(value)) {
     return null;
   }
 
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
+  const withScheme = /^https?:\/\//i.test(value) ? value : `http://${value}`;
+  const url = parseOriginUrl(withScheme);
+  if (url === null) {
     return null;
   }
 
@@ -50,11 +65,7 @@ const canonicalizeOrigin = (value: string): string | null => {
     return null;
   }
 
-  if (url.username || url.password) {
-    return null;
-  }
-
-  if (url.pathname !== "/" || url.search !== "" || url.hash !== "") {
+  if (url.hostname === "") {
     return null;
   }
 
@@ -123,13 +134,26 @@ const envSchema = z
         continue;
       }
 
-      if (canonicalizeOrigin(entry) === null) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["CORS_ORIGIN"],
-          message: `Invalid origin "${entry}": use a bare origin with scheme and optional port, without path, query, fragment or credentials (e.g. http://localhost:3000)`,
-        });
+      const url = parseOriginUrl(entry);
+      const isBareOrigin =
+        url !== null &&
+        (url.protocol === "http:" || url.protocol === "https:") &&
+        url.username === "" &&
+        url.password === "" &&
+        entry === url.origin;
+
+      if (isBareOrigin) {
+        continue;
       }
+
+      const suggestion = suggestCanonicalOrigin(entry);
+      ctx.addIssue({
+        code: "custom",
+        path: ["CORS_ORIGIN"],
+        message: suggestion
+          ? `Invalid origin "${entry}": CORS_ORIGIN entries must be bare origins (item === new URL(item).origin) with no trailing slash, path, query, fragment or credentials. Use "${suggestion}"`
+          : `Invalid origin "${entry}": CORS_ORIGIN entries must be bare origins (item === new URL(item).origin) with scheme and optional port, no trailing slash, path, query, fragment or credentials (e.g. http://localhost:3000)`,
+      });
     }
 
     if (data.FEATURE_OAUTH) {
@@ -177,18 +201,17 @@ if (!parsed.success) {
 
 /**
  * Parsed environment plus derived values.
- * CORS_ORIGINS is the canonicalized allowlist; CORS_ORIGIN stays available as
- * the raw string so boot can report the offending value.
+ * CORS_ORIGINS is the validated allowlist; CORS_ORIGIN stays available as the
+ * raw string so boot can report the offending value.
  */
 type Env = z.infer<typeof envSchema> & {
-  /** Canonical origins allowed by @fastify/cors. Never contains "*". */
+  /** Bare origins allowed by @fastify/cors. Never contains "*". */
   CORS_ORIGINS: string[];
 };
 
 export const env: Env = {
   ...parsed.data,
-  // Validation above guarantees every entry is canonical, so nulls cannot occur.
-  CORS_ORIGINS: splitList(parsed.data.CORS_ORIGIN)
-    .map(canonicalizeOrigin)
-    .filter((origin): origin is string => origin !== null),
+  // superRefine above guarantees every entry satisfies entry === new URL(entry).origin,
+  // so these can be forwarded to @fastify/cors without rewriting the browser origin.
+  CORS_ORIGINS: splitList(parsed.data.CORS_ORIGIN),
 };
