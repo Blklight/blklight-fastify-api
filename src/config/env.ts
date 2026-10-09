@@ -87,6 +87,13 @@ const envSchema = z
      * requests racing on the same cookie.
      */
     REFRESH_REUSE_GRACE_SECONDS: z.coerce.number().int().positive().default(30),
+    /**
+     * Per-user (falling back to per-IP) rate limits for document writes. The
+     * create/publish routes use these instead of the global 100/min limit; the
+     * autosave PATCH route keeps the global limit.
+     */
+    RATE_LIMIT_DOCS_CREATE_MAX: z.coerce.number().int().positive().default(20),
+    RATE_LIMIT_DOCS_PUBLISH_MAX: z.coerce.number().int().positive().default(10),
     PORT: z.coerce.number().int().positive().default(4000),
     NODE_ENV: z
       .enum(["development", "production", "test"])

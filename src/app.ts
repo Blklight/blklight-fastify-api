@@ -14,7 +14,7 @@ import swagger from '@fastify/swagger';
 import scalar from '@scalar/fastify-api-reference';
 import oauth2 from '@fastify/oauth2';
 import { env } from './config/env';
-import { AppError, ValidationError } from './utils/errors';
+import { AppError, ValidationError, RateLimitError } from './utils/errors';
 import authRoutes from './features/auth/auth.routes';
 import profileRoutes from './features/profiles/profiles.routes';
 import documentRoutes from './features/documents/documents.routes';
@@ -90,7 +90,16 @@ export async function buildApp() {
     methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
   });
 
-  await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+  // Route-level config.rateLimit inherits this errorResponseBuilder through the
+  // plugin's mergeParams, so every 429 (global and per-route) is sent as a
+  // RateLimitError and reaches setErrorHandler's AppError branch, yielding the
+  // project's { data, error, message } envelope instead of a bare 500.
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: '1 minute',
+    errorResponseBuilder: (_request, context) =>
+      new RateLimitError(`Rate limit exceeded, retry in ${context.after}`),
+  });
 
   await app.register(websocket, {
     options: { maxPayload: 16 * 1024 },

@@ -14,6 +14,7 @@ import { profiles } from '../profiles/profiles.schema';
 import { db } from '../../db/index';
 import { eq } from 'drizzle-orm';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
+import { env } from '../../config/env';
 
 const AUTHOR_SCHEMA = {
   type: 'object',
@@ -400,6 +401,17 @@ export default async function documentRoutes(app: FastifyInstance) {
     });
 
     app.post('/', {
+      config: {
+        // hook: 'preHandler' runs after the scope's authenticate hook, so the
+        // keyGenerator can key by the authenticated user. Fallback to IP keeps
+        // unauthenticated requests (rejected later anyway) from sharing a bucket.
+        rateLimit: {
+          max: env.RATE_LIMIT_DOCS_CREATE_MAX,
+          timeWindow: '1 minute',
+          hook: 'preHandler',
+          keyGenerator: (request) => request.user?.userId ?? request.ip,
+        },
+      },
       schema: {
         summary: 'Create a new document',
         tags: ['documents'],
@@ -554,6 +566,14 @@ export default async function documentRoutes(app: FastifyInstance) {
     });
 
     app.patch('/:id/publish', {
+      config: {
+        rateLimit: {
+          max: env.RATE_LIMIT_DOCS_PUBLISH_MAX,
+          timeWindow: '1 minute',
+          hook: 'preHandler',
+          keyGenerator: (request) => request.user?.userId ?? request.ip,
+        },
+      },
       schema: {
         summary: 'Publish a document',
         tags: ['documents'],

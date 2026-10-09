@@ -62,3 +62,15 @@ export class ForbiddenError extends AppError {
     super('FORBIDDEN', message, 403);
   }
 }
+
+/**
+ * Error for exceeding a rate limit.
+ * Thrown by @fastify/rate-limit's errorResponseBuilder so the standard error
+ * envelope is used instead of the plugin's bare Error (which the app-level
+ * error handler would otherwise serialize as a 500).
+ */
+export class RateLimitError extends AppError {
+  constructor(message = 'Rate limit exceeded') {
+    super('RATE_LIMIT_EXCEEDED', message, 429);
+  }
+}

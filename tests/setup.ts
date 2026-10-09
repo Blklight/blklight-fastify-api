@@ -14,6 +14,8 @@ vi.mock('../src/config/env', () => ({
     CORS_ORIGINS: ['http://localhost:3000'],
     COOKIE_SAMESITE: 'strict',
     MAX_SESSIONS_PER_USER: 5,
+    RATE_LIMIT_DOCS_CREATE_MAX: 100000,
+    RATE_LIMIT_DOCS_PUBLISH_MAX: 100000,
     SIGNATURE_ENCRYPTION_KEY: '0'.repeat(64),
     GITHUB_CLIENT_ID: 'test',
     GITHUB_CLIENT_SECRET: 'test',
