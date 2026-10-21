@@ -175,11 +175,16 @@ async function api(
   });
 }
 
-async function createDraft(account: Account, title: string, withCategory = true) {
+async function createDraft(
+  account: Account,
+  title: string,
+  withCategory = true,
+  withContent = true
+) {
   const res = await api(account, 'POST', '/api/v1/documents', {
     title,
     type: 'article',
-    content: { type: 'doc', content: [{ type: 'paragraph' }] },
+    ...(withContent ? { content: { type: 'doc', content: [{ type: 'paragraph' }] } } : {}),
     ...(withCategory ? { categoryId } : {}),
   });
   const body = res.json() as { data?: { id: string; slug: string } };
@@ -438,5 +443,431 @@ describe('document lifecycle (integration)', () => {
     const secondBody = second.json() as { data: { items: { id: string }[] } };
     expect(secondBody.data.items).toHaveLength(1);
     expect(secondBody.data.items[0]!.id).not.toBe(firstBody.data.items[0]!.id);
+  });
+});
+
+/**
+ * Per-test sub-prefixes. The feed `q` filter is an ILIKE on the title, so a
+ * shared prefix would mix the fixtures of every test and make the exact
+ * totals impossible to assert.
+ */
+const SUB = {
+  crossAuthor: `${PREFIX}xtra-`,
+  privateAuthor: `${PREFIX}priv-`,
+  softDelete: `${PREFIX}sdel-`,
+  publishErrors: `${PREFIX}pube-`,
+  tags: `${PREFIX}tage-`,
+  sort: `${PREFIX}pops-`,
+  slug: `${PREFIX}slge-`,
+} as const;
+
+interface FeedBody {
+  data: { items: { id: string; slug: string; likesCount: number }[]; nextCursor: string | null; total: number };
+}
+
+interface ErrorBody {
+  data: null;
+  error: { code: string; message: string; fields?: Record<string, string> };
+  message: string;
+}
+
+describe('cross-author write isolation', () => {
+  it('rejects a PATCH from another author with 404 and leaves the owner document intact', async () => {
+    const owner = await createAccount('xtra');
+    const intruder = await createAccount('xtri');
+    const title = `${SUB.crossAuthor}Original Title`;
+    const { id } = await createDraft(owner, title);
+
+    const res = await api(intruder, 'PATCH', `/api/v1/documents/${id}`, {
+      title: 'Hijacked by another author',
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.message).toBe('Document not found');
+
+    const ownerRead = await api(owner, 'GET', `/api/v1/documents/${id}`);
+    expect(ownerRead.statusCode).toBe(200);
+    const ownerBody = ownerRead.json() as { data: { title: string; slug: string } };
+    expect(ownerBody.data.title).toBe(title);
+    expect(ownerBody.data.slug).not.toContain('hijacked');
+  });
+});
+
+describe('private author visibility', () => {
+  it('answers a private author document with the exact same 404 body as a missing slug and drops it from the feed', async () => {
+    const author = await createAccount('priva');
+    const viewer = await createAccount('privv');
+    const q = SUB.privateAuthor;
+    const { id, slug } = await createDraft(author, `${q}Private Doc`);
+    await api(author, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    // Control: while the author is public the document is in the feed.
+    const publicFeed = await api(null, 'GET', `/api/v1/documents?q=${encodeURIComponent(q)}`);
+    expect(publicFeed.statusCode).toBe(200);
+    const publicBody = publicFeed.json() as FeedBody;
+    expect(publicBody.data.total).toBe(1);
+    expect(publicBody.data.items.map((item) => item.id)).toEqual([id]);
+
+    await db.update(profiles).set({ isPrivate: true }).where(eq(profiles.id, author.profileId));
+
+    const anonymous = await api(null, 'GET', `/api/v1/documents/${author.username}/${slug}`);
+    const authenticated = await api(viewer, 'GET', `/api/v1/documents/${author.username}/${slug}`);
+    const missing = await api(null, 'GET', `/api/v1/documents/${author.username}/no-such-slug`);
+
+    expect(anonymous.statusCode).toBe(404);
+    expect(authenticated.statusCode).toBe(404);
+    expect(missing.statusCode).toBe(404);
+    expect(anonymous.body).toBe(missing.body);
+    expect(authenticated.body).toBe(missing.body);
+
+    const anonFeed = await api(null, 'GET', `/api/v1/documents?q=${encodeURIComponent(q)}`);
+    const viewerFeed = await api(viewer, 'GET', `/api/v1/documents?q=${encodeURIComponent(q)}`);
+    const anonFeedBody = anonFeed.json() as FeedBody;
+    const viewerFeedBody = viewerFeed.json() as FeedBody;
+    expect(anonFeedBody.data.total).toBe(0);
+    expect(anonFeedBody.data.items).toHaveLength(0);
+    expect(viewerFeedBody.data.total).toBe(0);
+    expect(viewerFeedBody.data.items).toHaveLength(0);
+  });
+});
+
+describe('soft delete isolation', () => {
+  it('removes a published document from the public feed with an exact total and keeps the drafts', async () => {
+    const account = await createAccount('sdel');
+    const q = SUB.softDelete;
+    const draftA = await createDraft(account, `${q}Draft One`);
+    const draftB = await createDraft(account, `${q}Draft Two`);
+    const live = await createDraft(account, `${q}Live Doc`);
+
+    const published = await api(account, 'PATCH', `/api/v1/documents/${live.id}/publish`);
+    expect(published.statusCode).toBe(200);
+
+    const before = await api(null, 'GET', `/api/v1/documents?q=${encodeURIComponent(q)}`);
+    const beforeBody = before.json() as FeedBody;
+    expect(beforeBody.data.total).toBe(1);
+    expect(beforeBody.data.items.map((item) => item.id)).toEqual([live.id]);
+
+    const control = await api(null, 'GET', `/api/v1/documents/${account.username}/${live.slug}`);
+    expect(control.statusCode).toBe(200);
+
+    const del = await api(account, 'DELETE', `/api/v1/documents/${live.id}`);
+    expect(del.statusCode).toBe(200);
+
+    const after = await api(null, 'GET', `/api/v1/documents?q=${encodeURIComponent(q)}`);
+    const afterBody = after.json() as FeedBody;
+    expect(afterBody.data.total).toBe(0);
+    expect(afterBody.data.items).toHaveLength(0);
+
+    const gone = await api(null, 'GET', `/api/v1/documents/${account.username}/${live.slug}`);
+    expect(gone.statusCode).toBe(404);
+
+    const ownerA = await api(account, 'GET', `/api/v1/documents/${draftA.id}`);
+    const ownerB = await api(account, 'GET', `/api/v1/documents/${draftB.id}`);
+    expect(ownerA.statusCode).toBe(200);
+    expect(ownerB.statusCode).toBe(200);
+  });
+});
+
+describe('publish error contract', () => {
+  it('returns 404 when the document does not exist', async () => {
+    const account = await createAccount('pube');
+    const res = await api(account, 'PATCH', `/api/v1/documents/${createId()}/publish`);
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.message).toBe('Document not found');
+  });
+
+  it('returns 404 when the document belongs to another author', async () => {
+    const owner = await createAccount('pubo');
+    const other = await createAccount('pubx');
+    const { id } = await createDraft(owner, `${SUB.publishErrors}Foreign`);
+
+    const res = await api(other, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.message).toBe('Document not found');
+  });
+
+  it('returns 400 when the document is already published', async () => {
+    const account = await createAccount('pubd');
+    const { id } = await createDraft(account, `${SUB.publishErrors}Already Published`);
+    await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Document is already published');
+  });
+
+  it('returns 400 when the document has no content', async () => {
+    const account = await createAccount('pubc');
+    const { id } = await createDraft(account, `${SUB.publishErrors}No Content`, true, false);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Cannot publish empty document');
+  });
+
+  it('returns 400 when the document has no category', async () => {
+    const account = await createAccount('pubg');
+    const { id } = await createDraft(account, `${SUB.publishErrors}No Category`, false);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('A category is required to publish');
+  });
+
+  it('prefers the already-published error over the empty-content error', async () => {
+    const account = await createAccount('pubp');
+    const { id } = await createDraft(account, `${SUB.publishErrors}Published And Empty`);
+    await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+    await db.update(documents).set({ content: null }).where(eq(documents.id, id));
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.message).toBe('Document is already published');
+  });
+
+  it('prefers the empty-content error over the missing-category error', async () => {
+    const account = await createAccount('pubq');
+    const { id } = await createDraft(account, `${SUB.publishErrors}Empty And Uncategorised`, false, false);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.message).toBe('Cannot publish empty document');
+  });
+
+  it('prefers the ownership error over every other publish failure', async () => {
+    const owner = await createAccount('pubr');
+    const other = await createAccount('pubs');
+    const { id } = await createDraft(owner, `${SUB.publishErrors}Foreign And Unpublishable`, false, false);
+
+    const res = await api(other, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.message).toBe('Document not found');
+  });
+
+  it('publishes a document successfully', async () => {
+    const account = await createAccount('pubv');
+    const { id } = await createDraft(account, `${SUB.publishErrors}Happy Path`);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      data: { status: string; publishedAt: string | null; authorship: { publicIdentifier: string } | null };
+    };
+    expect(body.data.status).toBe('published');
+    expect(body.data.publishedAt).toBeTruthy();
+    expect(body.data.authorship?.publicIdentifier).toMatch(/^PLT-/);
+  });
+});
+
+describe('document tags', () => {
+  it('persists the tags of a document and returns them on the owner read', async () => {
+    const account = await createAccount('tage');
+    const tagA = `${SUB.tags}a`;
+    const tagB = `${SUB.tags}b`;
+    createdTagNames.push(tagA, tagB);
+
+    const res = await api(account, 'POST', '/api/v1/documents', {
+      title: `${SUB.tags}Tagged`,
+      type: 'article',
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+      categoryId,
+      tags: [tagA, tagB],
+    });
+
+    expect(res.statusCode).toBe(201);
+    const id = (res.json() as { data: { id: string } }).data.id;
+    createdDocumentIds.push(id);
+
+    const read = await api(account, 'GET', `/api/v1/documents/${id}`);
+    expect(read.statusCode).toBe(200);
+    const body = read.json() as { data: { tags: { name: string }[] } };
+    expect(body.data.tags.map((tag) => tag.name).sort()).toEqual([tagA, tagB].sort());
+  });
+
+  it('rejects more than five tags with a validation error', async () => {
+    const account = await createAccount('tagf');
+    const many = Array.from({ length: 6 }, (_, index) => `${SUB.tags}t${index + 1}`);
+    createdTagNames.push(...many);
+
+    const res = await api(account, 'POST', '/api/v1/documents', {
+      title: `${SUB.tags}Too Many`,
+      type: 'article',
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+      categoryId,
+      tags: many,
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.fields?.tags).toBeTruthy();
+  });
+
+  it('replaces the tag set on PATCH instead of appending to it', async () => {
+    const account = await createAccount('tagr');
+    const tagA = `${SUB.tags}ra`;
+    const tagB = `${SUB.tags}rb`;
+    const tagC = `${SUB.tags}rc`;
+    createdTagNames.push(tagA, tagB, tagC);
+
+    const created = await api(account, 'POST', '/api/v1/documents', {
+      title: `${SUB.tags}Replaceable`,
+      type: 'article',
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+      categoryId,
+      tags: [tagA, tagB],
+    });
+    expect(created.statusCode).toBe(201);
+    const id = (created.json() as { data: { id: string } }).data.id;
+    createdDocumentIds.push(id);
+
+    const patched = await api(account, 'PATCH', `/api/v1/documents/${id}`, { tags: [tagC] });
+    expect(patched.statusCode).toBe(200);
+
+    const read = await api(account, 'GET', `/api/v1/documents/${id}`);
+    expect(read.statusCode).toBe(200);
+    const body = read.json() as { data: { tags: { name: string }[] } };
+    expect(body.data.tags).toHaveLength(1);
+    expect(body.data.tags.map((tag) => tag.name)).toEqual([tagC]);
+  });
+});
+
+describe('feed sort order', () => {
+  it('orders by popularity and by recency according to the sort parameter', async () => {
+    const author = await createAccount('pope');
+    const helperA = await createAccount('popv');
+    const helperB = await createAccount('popw');
+    const q = SUB.sort;
+
+    const oldest = await createDraft(author, `${q}Oldest`);
+    const middle = await createDraft(author, `${q}Middle`);
+    const newest = await createDraft(author, `${q}Newest`);
+    for (const doc of [oldest, middle, newest]) {
+      const published = await api(author, 'PATCH', `/api/v1/documents/${doc.id}/publish`);
+      expect(published.statusCode).toBe(200);
+    }
+
+    // Distinct publication timestamps, so "recent" is not a tie broken by id.
+    const base = new Date('2026-01-01T00:00:00.000Z');
+    await db.update(documents).set({ publishedAt: base }).where(eq(documents.id, oldest.id));
+    await db
+      .update(documents)
+      .set({ publishedAt: new Date(base.getTime() + 60_000) })
+      .where(eq(documents.id, middle.id));
+    await db
+      .update(documents)
+      .set({ publishedAt: new Date(base.getTime() + 120_000) })
+      .where(eq(documents.id, newest.id));
+
+    // Distinct like counts, so "popular" is not a tie broken by id.
+    await db.insert(documentLikes).values([
+      { id: createId(), profileId: author.profileId, documentId: oldest.id },
+      { id: createId(), profileId: helperA.profileId, documentId: oldest.id },
+      { id: createId(), profileId: helperB.profileId, documentId: oldest.id },
+      { id: createId(), profileId: author.profileId, documentId: middle.id },
+    ]);
+
+    const recent = await api(
+      null,
+      'GET',
+      `/api/v1/documents?q=${encodeURIComponent(q)}&sort=recent&limit=10`
+    );
+    expect(recent.statusCode).toBe(200);
+    const recentBody = recent.json() as FeedBody;
+    expect(recentBody.data.items.map((item) => item.id)).toEqual([newest.id, middle.id, oldest.id]);
+
+    const popular = await api(
+      null,
+      'GET',
+      `/api/v1/documents?q=${encodeURIComponent(q)}&sort=popular&limit=10`
+    );
+    expect(popular.statusCode).toBe(200);
+    const popularBody = popular.json() as FeedBody;
+    expect(popularBody.data.items.map((item) => item.id)).toEqual([oldest.id, middle.id, newest.id]);
+    expect(popularBody.data.items.map((item) => item.likesCount)).toEqual([3, 1, 0]);
+  });
+});
+
+describe('slug lifecycle', () => {
+  it('suffixes a duplicated title slug with -1', async () => {
+    const account = await createAccount('slge');
+    const title = `${SUB.slug}Repeat Title`;
+
+    const first = await createDraft(account, title);
+    const second = await createDraft(account, title);
+
+    expect(first.res.statusCode).toBe(201);
+    expect(second.res.statusCode).toBe(201);
+    expect(first.slug).toBe(`${SUB.slug}repeat-title`);
+    expect(second.slug).toBe(`${SUB.slug}repeat-title-1`);
+  });
+
+  it('regenerates the slug from the new title while the document is a draft', async () => {
+    const account = await createAccount('slgr');
+    const { id, slug } = await createDraft(account, `${SUB.slug}First Title`);
+    expect(slug).toBe(`${SUB.slug}first-title`);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}`, {
+      title: `${SUB.slug}Second Title`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { data: { title: string; slug: string } };
+    expect(body.data.title).toBe(`${SUB.slug}Second Title`);
+    expect(body.data.slug).toBe(`${SUB.slug}second-title`);
+  });
+
+  it('keeps the slug when the title of a published document changes', async () => {
+    const account = await createAccount('slgp');
+    const { id, slug } = await createDraft(account, `${SUB.slug}Published Title`);
+    const published = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+    expect(published.statusCode).toBe(200);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}`, {
+      title: `${SUB.slug}Renamed Title`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { data: { title: string; slug: string } };
+    expect(body.data.title).toBe(`${SUB.slug}Renamed Title`);
+    expect(body.data.slug).toBe(slug);
+  });
+
+  it('rejects an unknown document type on create', async () => {
+    const account = await createAccount('slgt');
+
+    const res = await api(account, 'POST', '/api/v1/documents', {
+      title: `${SUB.slug}Bad Type`,
+      type: 'not-a-real-type',
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+    expect(body.error.message).toBe('Invalid document type');
   });
 });
