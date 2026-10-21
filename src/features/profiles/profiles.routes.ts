@@ -258,9 +258,24 @@ export default async function profileRoutes(app: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const parsed = updateProfileSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.code(400).send({
+        data: null,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          fields: Object.fromEntries(
+            parsed.error.issues.map((i) => [i.path.join('.'), i.message])
+          ),
+        },
+        message: 'Validation failed',
+      });
+    }
+
     const userId = request.user.userId;
-    const data = request.body as Record<string, unknown>;
-    const profile = await updateProfile(userId, data);
+    const profile = await updateProfile(userId, parsed.data);
     reply.send({
       data: {
         ...profile,

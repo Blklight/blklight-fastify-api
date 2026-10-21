@@ -5,6 +5,7 @@ import { profiles } from './profiles.schema';
 import { NotFoundError, ConflictError } from '../../utils/errors';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 import { getFollowStatus } from '../follows/follows.service';
+import { matchUsername, normalizeUsername } from '../../utils/username';
 import type { UpdateProfileInput } from './profiles.zod';
 
 export interface PublicProfile {
@@ -62,7 +63,7 @@ export async function getPublicProfile(
     })
     .from(profiles)
     .innerJoin(users, eq(profiles.userId, users.id))
-    .where(eq(profiles.username, username))
+    .where(matchUsername(profiles.username, username))
     .limit(1);
 
   if (result.length === 0) {
@@ -181,7 +182,9 @@ export async function updateProfile(
   userId: string,
   data: Partial<UpdateProfileInput>
 ): Promise<FullProfile> {
-  if (data.username !== undefined) {
+  const nextUsername = data.username !== undefined ? normalizeUsername(data.username) : undefined;
+
+  if (nextUsername !== undefined) {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     const existingUsername = await db
@@ -189,7 +192,7 @@ export async function updateProfile(
       .from(users)
       .where(
         and(
-          eq(users.username, data.username),
+          matchUsername(users.username, nextUsername),
           ne(users.id, userId),
           or(
             isNull(users.deletedAt),
@@ -207,15 +210,15 @@ export async function updateProfile(
   const now = new Date();
 
   await db.transaction(async (tx) => {
-    if (data.username !== undefined) {
+    if (nextUsername !== undefined) {
       await tx
         .update(users)
-        .set({ username: data.username, updatedAt: now })
+        .set({ username: nextUsername, updatedAt: now })
         .where(eq(users.id, userId));
 
       await tx
         .update(profiles)
-        .set({ username: data.username, updatedAt: now })
+        .set({ username: nextUsername, updatedAt: now })
         .where(eq(profiles.userId, userId));
     }
 

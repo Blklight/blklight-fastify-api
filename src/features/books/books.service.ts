@@ -23,6 +23,7 @@ import { users } from '../auth/auth.schema';
 import { signDocument } from '../signatures/signatures.service';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
+import { matchUsername } from '../../utils/username';
 import { generateToc, ChapterWithDocument } from '../../utils/toc';
 import type {
   CreateBookInput,
@@ -999,7 +1000,7 @@ export async function getPublicBook(username: string, slug: string, profileId: s
     .innerJoin(users, eq(profiles.userId, users.id))
     .where(
       and(
-        eq(profiles.username, username),
+        matchUsername(profiles.username, username),
         eq(books.slug, slug),
         eq(books.status, 'published'),
         isNull(books.deletedAt),

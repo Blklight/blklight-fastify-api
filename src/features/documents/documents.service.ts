@@ -17,6 +17,7 @@ import { follows } from '../follows/follows.schema';
 import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
 import { getDocumentCategory, setDocumentCategory, removeDocumentCategory } from '../categories/categories.service';
 import { getExercises } from '../tutorial-exercises/tutorial-exercises.service';
+import { matchUsername } from '../../utils/username';
 import type { CreateDocumentInput, UpdateDocumentInput } from './documents.zod';
 import type { NewProfile } from '../profiles/profiles.schema';
 
@@ -733,7 +734,7 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
   }
 
   if (params.author) {
-    conditions.push(eq(profiles.username, params.author));
+    conditions.push(matchUsername(profiles.username, params.author));
   }
 
   if (params.category) {
@@ -924,7 +925,7 @@ export async function getPublicDocument(username: string, slug: string, profileI
     .innerJoin(users, eq(profiles.userId, users.id))
     .where(
       and(
-        eq(profiles.username, username),
+        matchUsername(profiles.username, username),
         eq(documents.slug, slug),
         eq(documents.status, 'published'),
         isNull(documents.deletedAt),
@@ -1030,7 +1031,7 @@ export async function getAuthorPublicDocuments(
     .innerJoin(users, eq(profiles.userId, users.id))
     .where(
       and(
-        eq(profiles.username, username),
+        matchUsername(profiles.username, username),
         isNull(profiles.deletedAt),
         isNull(users.deletedAt)
       )

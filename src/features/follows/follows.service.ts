@@ -12,6 +12,7 @@ import { tags } from '../tags/tags.schema';
 import { documentLikes } from '../likes/likes.schema';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
+import { matchUsername } from '../../utils/username';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import { createId } from '@paralleldrive/cuid2';
 import type { DocumentCard } from '../documents/documents.service';
@@ -79,7 +80,7 @@ async function resolveProfileIdFromUsername(username: string): Promise<string> {
   const [profile] = await db
     .select({ id: profiles.id, deletedAt: profiles.deletedAt })
     .from(profiles)
-    .where(eq(profiles.username, username))
+    .where(matchUsername(profiles.username, username))
     .limit(1);
 
   if (!profile || profile.deletedAt !== null) {

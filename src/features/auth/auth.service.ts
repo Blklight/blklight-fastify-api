@@ -17,6 +17,7 @@ import {
 } from '../../config/cookies';
 import { sendVerificationEmail } from '../email/email.service';
 import { features } from '../../config/features';
+import { matchUsername, normalizeUsername } from '../../utils/username';
 import type { FastifyReply } from 'fastify';
 import type { AuthSession } from './auth.zod';
 
@@ -150,13 +151,13 @@ export async function setOnboardingUsername(userId: string, username: string): P
     throw new ValidationError('Username already set');
   }
 
-  const trimmedUsername = username.trim();
+  const trimmedUsername = normalizeUsername(username);
 
   if (trimmedUsername.length < 3 || trimmedUsername.length > 30) {
     throw new ValidationError('Username must be 3-30 characters');
   }
 
-  if (!/^[a-zA-Z0-9_]+$/.test(trimmedUsername)) {
+  if (!/^[a-z0-9_]+$/.test(trimmedUsername)) {
     throw new ValidationError('Username can only contain letters, numbers, and underscores');
   }
 
@@ -165,7 +166,7 @@ export async function setOnboardingUsername(userId: string, username: string): P
     .from(users)
     .where(
       and(
-        eq(users.username, trimmedUsername),
+        matchUsername(users.username, trimmedUsername),
         ne(users.id, userId),
         or(
           isNull(users.deletedAt),
@@ -373,6 +374,11 @@ export async function createUser(
   username: string,
   password: string
 ): Promise<CreateUserResult> {
+  // The reserved list is enforced by the Zod schema at the route boundary,
+  // never here: the legacy seed and the dev scripts create the "admin"
+  // account through this function.
+  const normalizedUsername = normalizeUsername(username);
+
   const existingUser = await db
     .select()
     .from(users)
@@ -388,7 +394,7 @@ export async function createUser(
     .from(users)
     .where(
       and(
-        eq(users.username, username),
+        matchUsername(users.username, normalizedUsername),
         or(
           isNull(users.deletedAt),
           gt(users.deletedAt, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))
@@ -409,7 +415,7 @@ export async function createUser(
     const newUser: NewUser = {
       id: userId,
       email,
-      username,
+      username: normalizedUsername,
       passwordHash: hash,
       salt,
       emailVerified: false,
@@ -423,7 +429,7 @@ export async function createUser(
     await tx.insert(profiles).values({
       id: createId(),
       userId,
-      username,
+      username: normalizedUsername,
       createdAt: now,
       updatedAt: now,
     });
@@ -444,7 +450,7 @@ export async function createUser(
       id: createId(),
       ownerId: userId,
       type: 'personal',
-      name: `${username}'s workspace`,
+      name: `${normalizedUsername}'s workspace`,
       isPersonal: true,
       colorLabels: null,
       createdAt: now,
@@ -472,7 +478,7 @@ export async function createUser(
     .limit(1);
 
   if (features.email) {
-    sendVerificationEmail(createdUser[0]!.id, email, username).catch((err) =>
+    sendVerificationEmail(createdUser[0]!.id, email, normalizedUsername).catch((err) =>
       console.error('Verification email enqueue failed:', err)
     );
   }
@@ -494,9 +500,11 @@ export async function loginUser(
   rememberMe?: boolean
 ): Promise<LoginUserResult> {
   const isEmail = identifier.includes('@');
-  const normalizedIdentifier = isEmail ? identifier.toLowerCase().trim() : identifier.trim();
+  const normalizedIdentifier = isEmail ? identifier.toLowerCase().trim() : normalizeUsername(identifier);
 
-  const condition = isEmail ? eq(users.email, normalizedIdentifier) : eq(users.username, normalizedIdentifier);
+  const condition = isEmail
+    ? eq(users.email, normalizedIdentifier)
+    : matchUsername(users.username, normalizedIdentifier);
 
   const userRows = await db
     .select()
