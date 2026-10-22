@@ -21,6 +21,7 @@ import {
   resolveOrganizationForAuthor,
   resolveOrganizationForViewer,
   assertOrganizationPublishAccess,
+  findOrganizationByReference,
   getOrganizationByOrgname,
   mapOrganization,
   type OrganizationRef,
@@ -219,6 +220,43 @@ async function resolveOrganizationIdForWrite(
   return org.id;
 }
 
+/**
+ * Resolve the organization link of an update.
+ *
+ * Clearing the link is always allowed for the author. Pointing the document
+ * at another organization requires an accepted membership on that
+ * organization: a missing organization and a private one the author cannot
+ * see both answer 404, a visible one answers 403.
+ *
+ * The membership is only revalidated when the value actually changes, so an
+ * autosave that resends the current organization keeps working for an author
+ * who was removed from it in the meantime.
+ * @param reference - The organization id or orgname sent by the client, or null to clear the link
+ * @param currentOrganizationId - The organization the document is linked to today
+ * @param authorProfileId - The author's profile ID
+ * @returns The organization id to store, or null when the link is cleared
+ * @throws NotFoundError if the organization does not exist or is private and the author is not a member
+ * @throws ForbiddenError if the author is not an accepted member of a visible organization
+ */
+async function resolveOrganizationIdForUpdate(
+  reference: string | null,
+  currentOrganizationId: string | null,
+  authorProfileId: string
+): Promise<string | null> {
+  if (reference === null) {
+    return null;
+  }
+
+  const target = await findOrganizationByReference(reference);
+
+  if (currentOrganizationId !== null && target !== null && target.id === currentOrganizationId) {
+    return currentOrganizationId;
+  }
+
+  const org = await resolveOrganizationForAuthor(reference, authorProfileId);
+  return org.id;
+}
+
 export async function createDocument(
   authorId: string,
   data: CreateDocumentInput
@@ -343,15 +381,17 @@ export async function updateDocument(
     updates.typeId = typeResult[0]!.id;
   }
 
-  // The organization link is part of the document's published identity, so it
-  // can only be changed while the document is still a draft. Attempting to
-  // change it on a published document is rejected with 400.
+  // The organization link is mutable, on a draft and on a published document
+  // alike: what is enforced is that the author may point the document at the
+  // target organization. Clearing it is always allowed, and a value equal to
+  // the current one is accepted without revalidating the membership, so an
+  // autosave never fails for an author who lost the membership.
   if (data.organizationId !== undefined) {
-    if (existingDoc.status === 'published') {
-      throw new ValidationError('Organization cannot be changed after publishing');
-    }
-
-    updates.organizationId = await resolveOrganizationIdForWrite(data.organizationId, authorId);
+    updates.organizationId = await resolveOrganizationIdForUpdate(
+      data.organizationId,
+      existingDoc.organizationId,
+      authorId
+    );
   }
 
   // Decisão de produto: editar o content de um doc published NÃO reseta

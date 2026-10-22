@@ -417,6 +417,17 @@ async function countRows(query: string, params: unknown[]): Promise<number> {
   return rows[0]!.c as number;
 }
 
+/**
+ * Exact number of documents currently linked to an organization.
+ */
+async function countDocumentsInOrg(orgId: string): Promise<number> {
+  const rows = await sql.unsafe(
+    'select count(*)::int as c from documents where organization_id = $1',
+    [orgId]
+  );
+  return rows[0]!.c as number;
+}
+
 interface FeedBody {
   data: {
     items: { id: string; organization: { id: string; orgname: string; name: string } | null }[];
@@ -525,7 +536,7 @@ describe('organization link on write', () => {
     expect(body.data.organization).toBeNull();
   });
 
-  it('rejects an organization change after publishing with 400', async () => {
+  it('changes the organization of a published document', async () => {
     const owner = await createAccount('ownp');
     const member = await createAccount('memp');
     const orgA = await createOrganization(owner, 'Published Org A');
@@ -540,10 +551,123 @@ describe('organization link on write', () => {
     expect(published.statusCode).toBe(200);
 
     const res = await api(member, 'PATCH', `/api/v1/documents/${id}`, { organizationId: orgB.id });
-    expect(res.statusCode).toBe(400);
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { data: { organization: { id: string } | null } };
+    expect(body.data.organization?.id).toBe(orgB.id);
+
+    expect(await countDocumentsInOrg(orgA.id)).toBe(0);
+    expect(await countDocumentsInOrg(orgB.id)).toBe(1);
+  });
+
+  it('clears the organization of a published document with null', async () => {
+    const owner = await createAccount('owncl');
+    const member = await createAccount('memcl');
+    const org = await createOrganization(owner, 'Published Clear Org');
+    await acceptMembership(org, owner, member);
+
+    const { id } = await createDraft(member, `${PREFIX}Published Then Clear`, {
+      organizationId: org.id,
+    });
+    const published = await api(member, 'PATCH', `/api/v1/documents/${id}/publish`);
+    expect(published.statusCode).toBe(200);
+
+    const res = await api(member, 'PATCH', `/api/v1/documents/${id}`, { organizationId: null });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { data: { organization: { id: string } | null } };
+    expect(body.data.organization).toBeNull();
+
+    expect(await countDocumentsInOrg(org.id)).toBe(0);
+  });
+
+  it('rejects a change to an organization without membership with 403', async () => {
+    const owner = await createAccount('ownf2');
+    const member = await createAccount('memf2');
+    const orgA = await createOrganization(owner, 'Kept Org');
+    const orgB = await createOrganization(owner, 'Forbidden Change Org');
+    await acceptMembership(orgA, owner, member);
+
+    const { id } = await createDraft(member, `${PREFIX}Forbidden Change`, {
+      organizationId: orgA.id,
+    });
+    const published = await api(member, 'PATCH', `/api/v1/documents/${id}/publish`);
+    expect(published.statusCode).toBe(200);
+
+    const res = await api(member, 'PATCH', `/api/v1/documents/${id}`, { organizationId: orgB.id });
+    expect(res.statusCode).toBe(403);
     const body = res.json() as ErrorBody;
-    expect(body.error.code).toBe('VALIDATION_ERROR');
-    expect(body.error.message).toBe('Organization cannot be changed after publishing');
+    expect(body.error.code).toBe('FORBIDDEN');
+    expect(body.error.message).toBe('You must be a member of this organization');
+
+    const read = await api(member, 'GET', `/api/v1/documents/${id}`);
+    const readBody = read.json() as { data: { organization: { id: string } | null } };
+    expect(readBody.data.organization?.id).toBe(orgA.id);
+
+    expect(await countDocumentsInOrg(orgA.id)).toBe(1);
+    expect(await countDocumentsInOrg(orgB.id)).toBe(0);
+  });
+
+  it('rejects a change to an organization without membership on a draft with 403', async () => {
+    const owner = await createAccount('ownf3');
+    const member = await createAccount('memf3');
+    const orgA = await createOrganization(owner, 'Draft Kept Org');
+    const orgB = await createOrganization(owner, 'Draft Forbidden Org');
+    await acceptMembership(orgA, owner, member);
+
+    const { id } = await createDraft(member, `${PREFIX}Draft Forbidden Change`, {
+      organizationId: orgA.id,
+    });
+
+    const res = await api(member, 'PATCH', `/api/v1/documents/${id}`, { organizationId: orgB.id });
+    expect(res.statusCode).toBe(403);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('FORBIDDEN');
+
+    expect(await countDocumentsInOrg(orgA.id)).toBe(1);
+    expect(await countDocumentsInOrg(orgB.id)).toBe(0);
+  });
+
+  it('accepts an autosave that resends the current organization after the membership was revoked', async () => {
+    const owner = await createAccount('ownrs');
+    const member = await createAccount('memrs');
+    const org = await createOrganization(owner, 'Revoked Autosave Org');
+    await acceptMembership(org, owner, member);
+
+    const { id } = await createDraft(member, `${PREFIX}Revoked Autosave`, {
+      organizationId: org.id,
+    });
+    const published = await api(member, 'PATCH', `/api/v1/documents/${id}/publish`);
+    expect(published.statusCode).toBe(200);
+
+    const removed = await api(owner, 'DELETE', `/api/v1/organizations/${org.id}/members/${member.profileId}`);
+    expect(removed.statusCode).toBe(200);
+
+    const byId = await api(member, 'PATCH', `/api/v1/documents/${id}`, { organizationId: org.id });
+    expect(byId.statusCode).toBe(200);
+    const byIdBody = byId.json() as { data: { organization: { id: string } | null } };
+    expect(byIdBody.data.organization?.id).toBe(org.id);
+
+    const byOrgname = await api(member, 'PATCH', `/api/v1/documents/${id}`, {
+      organizationId: org.orgname,
+    });
+    expect(byOrgname.statusCode).toBe(200);
+    const byOrgnameBody = byOrgname.json() as { data: { organization: { id: string } | null } };
+    expect(byOrgnameBody.data.organization?.id).toBe(org.id);
+
+    expect(await countDocumentsInOrg(org.id)).toBe(1);
+  });
+
+  it('rejects a change to an unknown organization with 404', async () => {
+    const account = await createAccount('ownx2');
+
+    const { id } = await createDraft(account, `${PREFIX}Unknown Org Change`);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}`, {
+      organizationId: 'does-not-exist',
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.message).toBe('Organization not found');
   });
 
   it('rejects the publish with 403 when the author lost the membership', async () => {

@@ -1062,10 +1062,12 @@ API docs at http://localhost:3000/docs
 - **documents.organization_id is nullable** — a document belongs to at most one organization
 - **FK is ON DELETE SET NULL** — deleting an organization unlinks its documents instead of deleting them
 - **organizationId is accepted on create and update** — resolved by id first, then by lowercased orgname
+- **The organization link is mutable** — it can change on a draft and on a published document alike
 - **Only ACCEPTED members can link a document** — any role (owner/admin/member) is enough
 - **Missing org answers 404** — a private org the author cannot see answers 404 too, so existence is never leaked
 - **Visible org + non-member answers 403** — ForbiddenError('You must be a member of this organization')
-- **The organization link is immutable after publishing** — any organizationId key in a PATCH on a published document answers 400
+- **Clearing the link (null) is always allowed** — the author can always unlink the document
+- **The membership is only revalidated when the value changes** — an autosave resending the current organizationId answers 200 even for an author who lost the membership
 - **Publish revalidates the membership** — an author removed from the org gets 403 and the document stays a draft
 - **Reads expose `organization: { id, orgname, name } | null`** — the field is part of every document read and card
 - **A private org is only revealed to the document's own author** — every other reader sees `organization: null`
