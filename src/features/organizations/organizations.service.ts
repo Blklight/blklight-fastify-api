@@ -13,6 +13,47 @@ import type { CreateOrganizationInput } from './organizations.zod';
 
 const ACCEPTED = 'accepted';
 
+/**
+ * The organization a document belongs to, as exposed on reads.
+ */
+export interface OrganizationRef {
+  id: string;
+  orgname: string;
+  name: string;
+}
+
+/**
+ * Map the organization of a document to the shape exposed on reads.
+ * A private organization is only revealed to the document's own author, so
+ * its existence is never leaked through a public read. A document keeps the
+ * link even when its author later leaves the organization.
+ * @param orgId - The organization ID stored on the document (null when unlinked)
+ * @param orgname - The organization orgname
+ * @param name - The organization display name
+ * @param isPrivate - Whether the organization is private
+ * @param viewerProfileId - The viewer's profile ID, when authenticated
+ * @param authorProfileId - The document author's profile ID
+ * @returns The organization reference or null
+ */
+export function mapOrganization(
+  orgId: string | null,
+  orgname: string | null,
+  name: string | null,
+  isPrivate: boolean | null,
+  viewerProfileId: string | undefined,
+  authorProfileId: string
+): OrganizationRef | null {
+  if (!orgId || !orgname || !name) {
+    return null;
+  }
+
+  if (isPrivate && viewerProfileId !== authorProfileId) {
+    return null;
+  }
+
+  return { id: orgId, orgname, name };
+}
+
 interface Roles {
   owner: number;
   admin: number;
@@ -78,6 +119,106 @@ export async function getOrganizationByOrgname(
   }
 
   throw new NotFoundError('Organization not found');
+}
+
+/**
+ * Find an organization by its id or by its orgname.
+ * The id is tried first so a slug-like orgname can never shadow an id.
+ * @param reference - The organization id or orgname
+ * @returns The organization row or null
+ */
+export async function findOrganizationByReference(reference: string): Promise<Organization | null> {
+  const value = reference.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const [byId] = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.id, value))
+    .limit(1);
+
+  if (byId) {
+    return byId;
+  }
+
+  const [byOrgname] = await db
+    .select()
+    .from(organizations)
+    .where(eq(organizations.orgname, value.toLowerCase()))
+    .limit(1);
+
+  return byOrgname ?? null;
+}
+
+/**
+ * Resolve an organization reference for a reader, applying the same
+ * visibility rule as getOrganizationByOrgname: a private organization is
+ * invisible to non-members, so it answers 404 exactly like a missing one.
+ * @param reference - The organization id or orgname
+ * @param profileId - Optional profile ID used to authorize private access
+ * @returns The organization row
+ * @throws NotFoundError if the org does not exist or is private and the caller is not a member
+ */
+export async function resolveOrganizationForViewer(
+  reference: string,
+  profileId?: string | null
+): Promise<Organization> {
+  const org = await findOrganizationByReference(reference);
+
+  if (!org) {
+    throw new NotFoundError('Organization not found');
+  }
+
+  if (!org.isPrivate) {
+    return org;
+  }
+
+  if (profileId) {
+    const member = await getMembership(org.id, profileId);
+    if (member?.status === ACCEPTED) {
+      return org;
+    }
+  }
+
+  throw new NotFoundError('Organization not found');
+}
+
+/**
+ * Resolve an organization reference for a write performed by a document
+ * author. A missing organization and a private organization the author
+ * cannot see both answer 404; a visible organization the author is not an
+ * accepted member of answers 403.
+ * @param reference - The organization id or orgname
+ * @param profileId - The author profile ID
+ * @returns The organization row
+ * @throws NotFoundError if the org does not exist or is private and the author is not a member
+ * @throws ForbiddenError if the author is not an accepted member of the org
+ */
+export async function resolveOrganizationForAuthor(
+  reference: string,
+  profileId: string
+): Promise<Organization> {
+  const org = await resolveOrganizationForViewer(reference, profileId);
+  await assertAcceptedMember(org.id, profileId);
+  return org;
+}
+
+/**
+ * Ensure a profile is still an accepted member of an organization, used to
+ * revalidate the ownership of a document at publish time.
+ * @param orgId - The organization ID
+ * @param profileId - The profile ID
+ * @throws ForbiddenError if the profile is not an accepted member
+ */
+export async function assertOrganizationPublishAccess(orgId: string, profileId: string): Promise<void> {
+  const member = await getMembership(orgId, profileId);
+
+  if (!member || member.status !== ACCEPTED) {
+    throw new ForbiddenError('You must be a member of this organization to publish this document');
+  }
 }
 
 /**

@@ -10,6 +10,8 @@ import { categories } from '../categories/categories.schema';
 import { documentTags } from '../tags/tags.schema';
 import { tags } from '../tags/tags.schema';
 import { documentLikes } from '../likes/likes.schema';
+import { organizations } from '../organizations/organizations.schema';
+import { mapOrganization } from '../organizations/organizations.service';
 import { ValidationError, NotFoundError, ConflictError } from '../../utils/errors';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 import { matchUsername } from '../../utils/username';
@@ -545,12 +547,18 @@ export async function getFollowingFeed(
       categoryId: documentCategories.categoryId,
       categoryName: categories.name,
       categorySlug: categories.slug,
+      authorProfileId: profiles.id,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
     .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(and(...pageConditions))
     .orderBy(desc(documents.publishedAt), desc(documents.id))
     .limit(limit + 1);
@@ -606,6 +614,14 @@ export async function getFollowingFeed(
       ? { id: doc.categoryId, name: doc.categoryName!, slug: doc.categorySlug! }
       : null,
     tags: tagsByDoc.get(doc.id) ?? [],
+    organization: mapOrganization(
+      doc.organizationId,
+      doc.organizationOrgname,
+      doc.organizationName,
+      doc.organizationIsPrivate,
+      followerProfileId,
+      doc.authorProfileId
+    ),
   }));
 
   const [totalResult] = await db

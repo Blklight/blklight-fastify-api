@@ -13,6 +13,9 @@ import {
   listMembers,
   getOrganizationByOrgname,
 } from './organizations.service';
+import { getOrganizationDocuments } from '../documents/documents.service';
+import { organizationFeedQuerySchema } from '../documents/documents.zod';
+import { DOCUMENT_CARD_SCHEMA } from '../documents/documents.routes';
 import { resolveProfileIdFromUserId } from '../../utils/profile';
 
 const ORG_SCHEMA = {
@@ -67,6 +70,22 @@ const SUCCESS_WITH_ARRAY = (itemSchema: object) => ({
   type: 'object',
   properties: {
     data: { type: 'array', items: itemSchema },
+    error: { type: 'null' },
+    message: { type: 'string' },
+  },
+});
+
+const SUCCESS_WITH_FEED = (itemSchema: object) => ({
+  type: 'object',
+  properties: {
+    data: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: itemSchema },
+        nextCursor: { type: ['string', 'null'] },
+        total: { type: 'number' },
+      },
+    },
     error: { type: 'null' },
     message: { type: 'string' },
   },
@@ -155,6 +174,59 @@ export default async function organizationRoutes(app: FastifyInstance) {
       data: org,
       error: null,
       message: 'Organization retrieved',
+    });
+  });
+
+  app.get('/org/:orgname/documents', {
+    schema: {
+      summary: 'List the published documents of an organization',
+      description:
+        'Private organizations answer 404 for everyone but their accepted members. Documents of private authors follow the same rule as the public feed.',
+      tags: ['organizations'],
+      params: {
+        type: 'object',
+        properties: {
+          orgname: { type: 'string' },
+        },
+        required: ['orgname'],
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          cursor: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, default: 20 },
+          type: { type: 'string' },
+          sort: { type: 'string', enum: ['recent', 'popular'], default: 'recent' },
+        },
+      },
+      response: {
+        200: SUCCESS_WITH_FEED(DOCUMENT_CARD_SCHEMA),
+      },
+    },
+  }, async (request: FastifyRequest<{ Params: { orgname: string } }>, reply: FastifyReply) => {
+    const { orgname } = request.params;
+    const parsed = organizationFeedQuerySchema.safeParse(request.query);
+
+    if (!parsed.success) {
+      return sendValidationError(reply, parsed);
+    }
+
+    // Auth is optional: anonymous visitors can list the documents of a public
+    // organization, while an accepted member of a private one sees it too.
+    let profileId: string | undefined;
+    try {
+      await request.jwtVerify();
+      profileId = await resolveProfileIdFromUserId(request.user.userId);
+    } catch {
+      profileId = undefined;
+    }
+
+    const result = await getOrganizationDocuments(orgname, parsed.data, profileId);
+
+    reply.send({
+      data: result,
+      error: null,
+      message: 'Organization documents retrieved',
     });
   });
 

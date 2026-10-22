@@ -8,6 +8,8 @@ import { NotFoundError } from '../../utils/errors';
 import { encodeCursor, decodeCursor } from '../../utils/cursor';
 import { getDocumentTags } from '../tags/tags.service';
 import { getDocumentCategory } from '../categories/categories.service';
+import { organizations } from '../organizations/organizations.schema';
+import { mapOrganization } from '../organizations/organizations.service';
 import type { DocumentCard, FeedResult } from '../documents/documents.service';
 import type { Authorship } from '../documents/documents.service';
 
@@ -52,11 +54,17 @@ export async function getMyBookmarks(profileId: string, params: BookmarkParams):
       displayName: profiles.displayName,
       avatarUrl: profiles.avatarUrl,
       authorship: documents.authorship,
+      authorProfileId: profiles.id,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documentBookmarks)
     .innerJoin(documents, eq(documentBookmarks.documentId, documents.id))
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(
       and(
         ...conditions,
@@ -99,6 +107,14 @@ export async function getMyBookmarks(profileId: string, params: BookmarkParams):
           ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
           : null,
         tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
+        organization: mapOrganization(
+          r.organizationId,
+          r.organizationOrgname,
+          r.organizationName,
+          r.organizationIsPrivate,
+          profileId,
+          r.authorProfileId
+        ),
       };
     })
   );

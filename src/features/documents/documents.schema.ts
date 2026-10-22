@@ -1,5 +1,6 @@
-import { pgTable, text, timestamp, jsonb, unique } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, unique, index } from 'drizzle-orm/pg-core';
 import { profiles } from '../profiles/profiles.schema';
+import { organizations } from '../organizations/organizations.schema';
 
 export const documentTypes = pgTable('document_types', {
   id: text('id').primaryKey(),
@@ -11,6 +12,7 @@ export const documents = pgTable('documents', {
   id: text('id').primaryKey(),
   authorId: text('author_id').notNull().references(() => profiles.id),
   typeId: text('type_id').notNull().references(() => documentTypes.id),
+  organizationId: text('organization_id').references(() => organizations.id, { onDelete: 'set null' }),
   status: text('status').default('draft').notNull(),
   title: text('title').notNull(),
   abstract: text('abstract'),
@@ -24,6 +26,7 @@ export const documents = pgTable('documents', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
   authorSlugUnique: unique().on(table.authorId, table.slug),
+  organizationIdx: index('documents_organization_id_idx').on(table.organizationId),
 }));
 
 export const documentStyles = pgTable('document_styles', {

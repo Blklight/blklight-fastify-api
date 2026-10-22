@@ -17,6 +17,15 @@ import { follows } from '../follows/follows.schema';
 import { getDocumentTags, setDocumentTags } from '../tags/tags.service';
 import { getDocumentCategory, setDocumentCategory, removeDocumentCategory } from '../categories/categories.service';
 import { getExercises } from '../tutorial-exercises/tutorial-exercises.service';
+import {
+  resolveOrganizationForAuthor,
+  resolveOrganizationForViewer,
+  assertOrganizationPublishAccess,
+  getOrganizationByOrgname,
+  mapOrganization,
+  type OrganizationRef,
+} from '../organizations/organizations.service';
+import { organizations } from '../organizations/organizations.schema';
 import { matchUsername } from '../../utils/username';
 import type { CreateDocumentInput, UpdateDocumentInput } from './documents.zod';
 import type { NewProfile } from '../profiles/profiles.schema';
@@ -36,6 +45,7 @@ export interface DocumentWithStyle {
   publishedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  organization: OrganizationRef | null;
   style: {
     typography: string;
     paperStyle: Record<string, unknown> | null;
@@ -46,6 +56,8 @@ export interface DocumentWithStyle {
     documentSignature: Record<string, unknown> | null;
   };
 }
+
+export { type OrganizationRef } from '../organizations/organizations.service';
 
 export interface MyDocumentDetail extends DocumentWithStyle {
   category: { id: string; name: string; slug: string } | null;
@@ -64,6 +76,7 @@ export interface DocumentSummary {
   publishedAt: Date | null;
   updatedAt: Date;
   createdAt: Date;
+  organization: OrganizationRef | null;
 }
 
 export interface Authorship {
@@ -186,6 +199,26 @@ function getDefaultStyles(typeName: string): Partial<NewDocumentStyle> {
   return base;
 }
 
+/**
+ * Resolve the organization a document should be linked to on write.
+ * @param reference - The organization id or orgname sent by the client
+ * @param authorProfileId - The author's profile ID
+ * @returns The resolved organization id, or null when the link must be cleared
+ * @throws NotFoundError if the organization does not exist or is private and the author is not a member
+ * @throws ForbiddenError if the author is not an accepted member of a visible organization
+ */
+async function resolveOrganizationIdForWrite(
+  reference: string | null | undefined,
+  authorProfileId: string
+): Promise<string | null> {
+  if (reference === undefined || reference === null) {
+    return null;
+  }
+
+  const org = await resolveOrganizationForAuthor(reference, authorProfileId);
+  return org.id;
+}
+
 export async function createDocument(
   authorId: string,
   data: CreateDocumentInput
@@ -205,6 +238,7 @@ export async function createDocument(
   const slug = await resolveUniqueSlug(baseSlug, (candidate) => isDocumentSlugTaken(authorId, candidate));
   const now = new Date();
   const documentId = createId();
+  const organizationId = await resolveOrganizationIdForWrite(data.organizationId, authorId);
 
   await db.transaction(async (tx) => {
     const newDocument: NewDocument = {
@@ -217,6 +251,7 @@ export async function createDocument(
       coverImageUrl: data.coverImageUrl ?? null,
       slug,
       status: 'draft',
+      organizationId,
       createdAt: now,
       updatedAt: now,
     };
@@ -306,6 +341,17 @@ export async function updateDocument(
       throw new ValidationError('Invalid document type');
     }
     updates.typeId = typeResult[0]!.id;
+  }
+
+  // The organization link is part of the document's published identity, so it
+  // can only be changed while the document is still a draft. Attempting to
+  // change it on a published document is rejected with 400.
+  if (data.organizationId !== undefined) {
+    if (existingDoc.status === 'published') {
+      throw new ValidationError('Organization cannot be changed after publishing');
+    }
+
+    updates.organizationId = await resolveOrganizationIdForWrite(data.organizationId, authorId);
   }
 
   // Decisão de produto: editar o content de um doc published NÃO reseta
@@ -401,6 +447,13 @@ export async function publishDocument(
     throw new ValidationError('A category is required to publish');
   }
 
+  // The organization link is revalidated at publish time: an author who was
+  // removed from the organization in the meantime cannot publish the document.
+  // The check runs last so the other publish errors keep their precedence.
+  if (existingDoc.organizationId) {
+    await assertOrganizationPublishAccess(existingDoc.organizationId, authorId);
+  }
+
   const profileResult = await db
     .select()
     .from(profiles)
@@ -477,9 +530,14 @@ export async function getMyDocuments(
       publishedAt: documents.publishedAt,
       updatedAt: documents.updatedAt,
       createdAt: documents.createdAt,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(and(eq(documents.authorId, authorId), isNull(documents.deletedAt)))
     .orderBy(desc(documents.updatedAt))
     .limit(limit)
@@ -497,6 +555,14 @@ export async function getMyDocuments(
     publishedAt: r.publishedAt,
     updatedAt: r.updatedAt,
     createdAt: r.createdAt,
+    organization: mapOrganization(
+      r.organizationId,
+      r.organizationOrgname,
+      r.organizationName,
+      r.organizationIsPrivate,
+      authorId,
+      authorId
+    ),
   }));
 }
 
@@ -545,9 +611,14 @@ async function getDocumentById(documentId: string, authorId: string): Promise<Do
       publishedAt: documents.publishedAt,
       createdAt: documents.createdAt,
       updatedAt: documents.updatedAt,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(eq(documents.id, documentId))
     .limit(1);
 
@@ -562,6 +633,14 @@ async function getDocumentById(documentId: string, authorId: string): Promise<Do
     ...doc,
     content: doc.content as Record<string, unknown> | null,
     authorship: doc.authorship as Authorship | null,
+    organization: mapOrganization(
+      doc.organizationId,
+      doc.organizationOrgname,
+      doc.organizationName,
+      doc.organizationIsPrivate,
+      authorId,
+      authorId
+    ),
     style,
   };
 }
@@ -591,9 +670,14 @@ export async function getMyDocumentById(authorId: string, documentId: string): P
       publishedAt: documents.publishedAt,
       createdAt: documents.createdAt,
       updatedAt: documents.updatedAt,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(and(eq(documents.id, documentId), isNull(documents.deletedAt)))
     .limit(1);
 
@@ -613,6 +697,14 @@ export async function getMyDocumentById(authorId: string, documentId: string): P
     ...doc,
     content: doc.content as Record<string, unknown> | null,
     authorship: doc.authorship as Authorship | null,
+    organization: mapOrganization(
+      doc.organizationId,
+      doc.organizationOrgname,
+      doc.organizationName,
+      doc.organizationIsPrivate,
+      authorId,
+      authorId
+    ),
     style,
     category: category ? { id: category.id, name: category.name, slug: category.slug } : null,
     tags: tags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
@@ -628,6 +720,7 @@ export interface FeedParams {
   sort?: 'recent' | 'popular';
   category?: string;
   tag?: string;
+  organization?: string;
 }
 
 export interface FeedResult {
@@ -663,12 +756,20 @@ export interface DocumentCard {
     name: string;
     slug: string;
   }[];
+  organization: OrganizationRef | null;
 }
 
 export interface AuthorFeedParams {
   cursor?: string;
   limit?: number;
   type?: string;
+}
+
+export interface OrganizationFeedParams {
+  cursor?: string;
+  limit?: number;
+  type?: string;
+  sort?: 'recent' | 'popular';
 }
 
 export interface DocumentFull {
@@ -709,16 +810,18 @@ export interface DocumentFull {
     name: string;
     slug: string;
   }[];
+  organization: OrganizationRef | null;
   exercises?: unknown[];
 }
 
 /**
  * Get public feed of published documents with cursor-based pagination.
  * Documents from private authors are only included when the viewer is that
- * author or an accepted follower; anonymous viewers never see them.
- * @param params - Feed parameters (cursor, limit, type, author, q, sort, category, tag)
+ * author or an accepted follower; anonymous visitors never see them.
+ * @param params - Feed parameters (cursor, limit, type, author, q, sort, category, tag, organization)
  * @param viewerProfileId - Optional viewer's profile ID (from JWT)
  * @returns Feed result with items, nextCursor, and total count
+ * @throws NotFoundError if the requested organization does not exist or is not visible to the viewer
  */
 export async function getPublicFeed(params: FeedParams, viewerProfileId?: string): Promise<FeedResult> {
   const limit = Math.min(params.limit ?? 20, 50);
@@ -728,6 +831,13 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
   conditions.push(eq(documents.status, 'published'));
   conditions.push(isNull(documents.deletedAt));
   conditions.push(buildAuthorVisibilityCondition(viewerProfileId));
+
+  if (params.organization) {
+    // A private organization is invisible to non-members, and a missing one is
+    // answered with the very same 404 so existence is never leaked.
+    const org = await resolveOrganizationForViewer(params.organization, viewerProfileId);
+    conditions.push(eq(documents.organizationId, org.id));
+  }
 
   if (params.type) {
     conditions.push(eq(documentTypes.name, params.type));
@@ -764,14 +874,39 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
     );
   }
 
+  return runDocumentFeed({
+    conditions,
+    sort,
+    limit,
+    cursor: params.cursor,
+    viewerProfileId,
+  });
+}
+
+/**
+ * Run a document feed query: one keyset page plus the total size of the whole
+ * filtered set. Shared by the public feed and the organization listing so both
+ * paginate and count with the exact same rules.
+ * @param options - Conditions, ordering, page size, cursor and optional viewer
+ * @returns Feed result with items, nextCursor, and total count
+ */
+async function runDocumentFeed(options: {
+  conditions: SQL[];
+  sort: 'recent' | 'popular';
+  limit: number;
+  cursor?: string;
+  viewerProfileId?: string;
+}): Promise<FeedResult> {
+  const { conditions, sort, limit, cursor, viewerProfileId } = options;
+
   const likesSubquery = sql<number>`(SELECT COUNT(*) FROM document_likes WHERE document_id = ${documents.id})`;
 
   // Keyset page condition is applied only to the page query — the count below
   // must reflect the whole filtered set, not "everything after the cursor".
   const pageConditions = [...conditions];
 
-  if (params.cursor) {
-    const decoded = decodeFeedCursor(params.cursor);
+  if (cursor) {
+    const decoded = decodeFeedCursor(cursor);
     // A cursor from another sort mode cannot be used as a keyset here; ignoring it
     // would silently restart pagination, so a mismatch serves the first page and
     // the client is expected to restart with the matching sort.
@@ -811,6 +946,11 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
       categoryId: documentCategories.categoryId,
       categoryName: categories.name,
       categorySlug: categories.slug,
+      authorProfileId: profiles.id,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
@@ -818,6 +958,7 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
     .innerJoin(users, eq(profiles.userId, users.id))
     .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
     .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(and(...pageConditions))
     .orderBy(sort === 'popular' ? desc(likesSubquery) : desc(documents.publishedAt), desc(documents.id))
     .limit(limit + 1);
@@ -870,6 +1011,14 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
         ? { id: r.categoryId, name: r.categoryName!, slug: r.categorySlug! }
         : null,
       tags: tagsByDoc.get(r.id) ?? [],
+      organization: mapOrganization(
+        r.organizationId,
+        r.organizationOrgname,
+        r.organizationName,
+        r.organizationIsPrivate,
+        viewerProfileId,
+        r.authorProfileId
+      ),
     };
   });
 
@@ -888,6 +1037,7 @@ export async function getPublicFeed(params: FeedParams, viewerProfileId?: string
     .innerJoin(users, eq(profiles.userId, users.id))
     .leftJoin(documentCategories, eq(documents.id, documentCategories.documentId))
     .leftJoin(categories, eq(documentCategories.categoryId, categories.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(and(...conditions));
 
   return { items, nextCursor, total: Number(totalResult?.count ?? 0) };
@@ -918,11 +1068,16 @@ export async function getPublicDocument(username: string, slug: string, profileI
       authorship: documents.authorship,
       authorProfileId: profiles.id,
       authorIsPrivate: profiles.isPrivate,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
     .innerJoin(users, eq(profiles.userId, users.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(
       and(
         matchUsername(profiles.username, username),
@@ -1001,6 +1156,14 @@ export async function getPublicDocument(username: string, slug: string, profileI
       ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
       : null,
     tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
+    organization: mapOrganization(
+      doc.organizationId,
+      doc.organizationOrgname,
+      doc.organizationName,
+      doc.organizationIsPrivate,
+      profileId,
+      doc.authorProfileId
+    ),
   };
 
   if (doc.typeName === 'tutorial') {
@@ -1085,10 +1248,16 @@ export async function getAuthorPublicDocuments(
       avatarUrl: profiles.avatarUrl,
       authorship: documents.authorship,
       likesCount: likesSubquery,
+      authorProfileId: profiles.id,
+      organizationId: documents.organizationId,
+      organizationOrgname: organizations.orgname,
+      organizationName: organizations.name,
+      organizationIsPrivate: organizations.isPrivate,
     })
     .from(documents)
     .innerJoin(documentTypes, eq(documents.typeId, documentTypes.id))
     .innerJoin(profiles, eq(documents.authorId, profiles.id))
+    .leftJoin(organizations, eq(documents.organizationId, organizations.id))
     .where(and(...conditions))
     .orderBy(desc(documents.publishedAt), desc(documents.id))
     .limit(limit + 1);
@@ -1124,6 +1293,14 @@ export async function getAuthorPublicDocuments(
           ? { id: docCategory.id, name: docCategory.name, slug: docCategory.slug }
           : null,
         tags: docTags.map((t) => ({ id: t.id, name: t.name, slug: t.slug })),
+        organization: mapOrganization(
+          r.organizationId,
+          r.organizationOrgname,
+          r.organizationName,
+          r.organizationIsPrivate,
+          viewerProfileId,
+          r.authorProfileId
+        ),
       };
     })
   );
@@ -1142,4 +1319,48 @@ export async function getAuthorPublicDocuments(
   const total = Number(totalResult[0]?.count ?? 0);
 
   return { items, nextCursor, total };
+}
+
+/**
+ * Get the published documents of an organization with cursor-based pagination.
+ * The organization is resolved by orgname only, so a private organization
+ * answers 404 for everyone but its accepted members. The private-author rule
+ * of the public feed applies here too: documents of a private author are
+ * omitted for viewers who are neither the author nor an accepted follower.
+ * The `organization` reference of every card follows the same private
+ * organization rule as the other reads — it is only filled for the document's
+ * own author.
+ * @param orgname - The organization orgname
+ * @param params - Feed parameters (cursor, limit, type, sort)
+ * @param viewerProfileId - Optional viewer's profile ID (from JWT)
+ * @returns Feed result with items, nextCursor, and total count
+ * @throws NotFoundError if the organization does not exist or is private and the viewer is not an accepted member
+ */
+export async function getOrganizationDocuments(
+  orgname: string,
+  params: OrganizationFeedParams,
+  viewerProfileId?: string
+): Promise<FeedResult> {
+  const org = await getOrganizationByOrgname(orgname, viewerProfileId ?? null);
+
+  const limit = Math.min(params.limit ?? 20, 50);
+  const sort = params.sort ?? 'recent';
+  const conditions: SQL[] = [];
+
+  conditions.push(eq(documents.organizationId, org.id));
+  conditions.push(eq(documents.status, 'published'));
+  conditions.push(isNull(documents.deletedAt));
+  conditions.push(buildAuthorVisibilityCondition(viewerProfileId));
+
+  if (params.type) {
+    conditions.push(eq(documentTypes.name, params.type));
+  }
+
+  return runDocumentFeed({
+    conditions,
+    sort,
+    limit,
+    cursor: params.cursor,
+    viewerProfileId,
+  });
 }

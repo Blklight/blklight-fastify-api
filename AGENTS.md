@@ -215,6 +215,11 @@ src/
       platform-apps.service.ts
       platform-apps.schema.ts - Drizzle schema: platform_apps, user_apps
       platform-apps.zod.ts
+    organizations/
+      organizations.routes.ts - Org management + public document listing
+      organizations.service.ts - Org/membership logic + mapOrganization()
+      organizations.schema.ts - Drizzle schema: organizations, organization_members
+      organizations.zod.ts
     memory/
       memory.routes.ts - Semantic search + related + digest
       memory.service.ts - Embedding generation + similarity search
@@ -512,6 +517,7 @@ Requires: `CREATE EXTENSION IF NOT EXISTS vector;` before running migrations.
 | content         | jsonb     | nullable (TipTap JSON)               |
 | cover_image_url | text      | nullable                             |
 | slug            | text      | unique per author (author_id + slug) |
+| organization_id | text      | nullable, foreign key → organizations.id (ON DELETE SET NULL) |
 | authorship      | jsonb     | set on publish, null while draft     |
 | published_at    | timestamp | nullable                             |
 | deleted_at      | timestamp | nullable (soft delete)               |
@@ -1051,6 +1057,25 @@ API docs at http://localhost:3000/docs
 5. POST /api/v1/platform-apps/me → activates selected apps, sets onboarding_complete = true
 6. Frontend redirects to dashboard
 
+## Documents ↔ Organizations
+
+- **documents.organization_id is nullable** — a document belongs to at most one organization
+- **FK is ON DELETE SET NULL** — deleting an organization unlinks its documents instead of deleting them
+- **organizationId is accepted on create and update** — resolved by id first, then by lowercased orgname
+- **Only ACCEPTED members can link a document** — any role (owner/admin/member) is enough
+- **Missing org answers 404** — a private org the author cannot see answers 404 too, so existence is never leaked
+- **Visible org + non-member answers 403** — ForbiddenError('You must be a member of this organization')
+- **The organization link is immutable after publishing** — any organizationId key in a PATCH on a published document answers 400
+- **Publish revalidates the membership** — an author removed from the org gets 403 and the document stays a draft
+- **Reads expose `organization: { id, orgname, name } | null`** — the field is part of every document read and card
+- **A private org is only revealed to the document's own author** — every other reader sees `organization: null`
+- **The link survives a membership removal** — a document keeps its organization reference even if the author leaves
+- **The public feed accepts `?organization=<orgname>`** — same private-org 404 rule as the organization listing
+- **GET /api/v1/org/:orgname/documents lists the org's published documents** — cursor pagination, feed shape, private-author rule applied
+- **A private org answers 404 on the listing for non-members** — accepted members see it, pending members do not
+- **mapOrganization() is the single privacy check** — lives in organizations.service.ts and is shared by documents, bookmarks and follows
+- **Authorship stays personal** — a document published inside an org is still signed by its author only
+
 ## Platform Apps
 
 Apps available at launch (seeded in `db/seed.ts`):
@@ -1195,6 +1220,7 @@ Apps available at launch (seeded in `db/seed.ts`):
 | GET    | /api/v1/categories/:slug             | Get a category by slug                   |
 | GET    | /api/v1/tags/popular                 | Get popular tags sorted by usage         |
 | GET    | /api/v1/platform-apps                | List all available apps                  |
+| GET    | /api/v1/org/:orgname/documents       | Organization's published documents       |
 
 ## Document Routes
 

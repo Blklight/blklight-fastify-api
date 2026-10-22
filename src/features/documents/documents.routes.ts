@@ -70,7 +70,16 @@ const AUTHORSHIP_SCHEMA = {
   },
 };
 
-const DOCUMENT_CARD_SCHEMA = {
+const ORGANIZATION_REF_SCHEMA = {
+  type: ['object', 'null'],
+  properties: {
+    id: { type: 'string' },
+    orgname: { type: 'string' },
+    name: { type: 'string' },
+  },
+};
+
+export const DOCUMENT_CARD_SCHEMA = {
   type: 'object',
   properties: {
     id: { type: 'string' },
@@ -90,6 +99,7 @@ const DOCUMENT_CARD_SCHEMA = {
     likesCount: { type: 'number' },
     category: CATEGORY_REF_SCHEMA,
     tags: { type: 'array', items: TAG_REF_SCHEMA },
+    organization: ORGANIZATION_REF_SCHEMA,
   },
 };
 
@@ -107,6 +117,7 @@ const DOCUMENT_SUMMARY_SCHEMA = {
     publishedAt: { type: ['string', 'null'] },
     updatedAt: { type: 'string' },
     createdAt: { type: 'string' },
+    organization: ORGANIZATION_REF_SCHEMA,
   },
 };
 
@@ -134,6 +145,7 @@ const DOCUMENT_FULL_SCHEMA = {
     category: CATEGORY_REF_SCHEMA,
     tags: { type: 'array', items: TAG_REF_SCHEMA },
     exercises: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    organization: ORGANIZATION_REF_SCHEMA,
   },
 };
 
@@ -155,6 +167,7 @@ const DOCUMENT_WITH_STYLE_SCHEMA = {
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
     style: STYLE_SCHEMA,
+    organization: ORGANIZATION_REF_SCHEMA,
   },
 };
 
@@ -202,6 +215,7 @@ export default async function documentRoutes(app: FastifyInstance) {
           sort: { type: 'string', enum: ['recent', 'popular'], default: 'recent' },
           category: { type: 'string' },
           tag: { type: 'string' },
+          organization: { type: 'string' },
         },
       },
       response: {
@@ -225,7 +239,7 @@ export default async function documentRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (request: FastifyRequest<{ Querystring: { cursor?: string; limit?: number; type?: string; author?: string; q?: string; sort?: string; category?: string; tag?: string } }>, reply: FastifyReply) => {
+  }, async (request: FastifyRequest<{ Querystring: { cursor?: string; limit?: number; type?: string; author?: string; q?: string; sort?: string; category?: string; tag?: string; organization?: string } }>, reply: FastifyReply) => {
     const parsed = feedQuerySchema.safeParse(request.query);
 
     if (!parsed.success) {
@@ -425,6 +439,7 @@ export default async function documentRoutes(app: FastifyInstance) {
             coverImageUrl: { type: 'string', format: 'uri' },
             type: { type: 'string' },
             slug: { type: 'string', pattern: '^[a-z0-9-]+$' },
+            organizationId: { type: ['string', 'null'] },
           },
         },
         response: {
@@ -508,6 +523,7 @@ export default async function documentRoutes(app: FastifyInstance) {
             documentHeader: { type: 'object' },
             documentFooter: { type: 'object' },
             documentSignature: { type: 'object' },
+            organizationId: { type: ['string', 'null'] },
           },
         },
         response: {
