@@ -36,7 +36,7 @@ vi.mock('../../src/config/env', async () => {
 });
 
 import postgres from 'postgres';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../src/db/index';
 import { env } from '../../src/config/env';
@@ -47,6 +47,14 @@ import { profiles } from '../../src/features/profiles/profiles.schema';
 import { signatures } from '../../src/features/signatures/signatures.schema';
 import { workspaces } from '../../src/features/workspace/workspace.schema';
 import { canvas } from '../../src/features/canvas/canvas.schema';
+import {
+  documents,
+  documentStyles,
+} from '../../src/features/documents/documents.schema';
+import { documentCategories } from '../../src/features/categories/categories.schema';
+import { documentTags } from '../../src/features/tags/tags.schema';
+import { documentLikes } from '../../src/features/likes/likes.schema';
+import { documentBookmarks } from '../../src/features/bookmarks/bookmarks.schema';
 import {
   emailVerifications,
   passwordResets,
@@ -63,9 +71,6 @@ const PREFIX = `uname-${RUN_ID}-`;
 const PASSWORD = 'Password123!';
 
 let app: FastifyInstance;
-
-const createdUserIds: string[] = [];
-const createdEmails: string[] = [];
 
 interface Account {
   userId: string;
@@ -99,9 +104,6 @@ async function createAccount(label: string): Promise<Account> {
     .where(eq(profiles.userId, user.id))
     .limit(1);
 
-  createdUserIds.push(user.id);
-  createdEmails.push(email);
-
   const token = app.jwt.sign(
     { userId: user.id, email: user.email, role: user.role },
     { expiresIn: env.JWT_ACCESS_EXPIRES_IN }
@@ -124,18 +126,27 @@ async function api(
   });
 }
 
-beforeAll(async () => {
-  expect(SQL_URL).not.toBe('');
-  app = await buildApp();
-  await app.ready();
-});
+/**
+ * Delete every row this run created.
+ *
+ * The lookup is by the run prefix, not by the ids collected while the tests
+ * were running: a row created before an assertion blew up never reached a
+ * tracking array, but it still carries the prefix, so the prefix lookup is
+ * the only cleanup that survives a failing test.
+ */
+async function deleteRunRows(): Promise<void> {
+  const created = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(like(users.email, `${PREFIX}%`));
 
-afterAll(async () => {
-  if (createdUserIds.length > 0) {
-    await db.delete(emailVerifications).where(inArray(emailVerifications.userId, createdUserIds));
-    await db.delete(passwordResets).where(inArray(passwordResets.userId, createdUserIds));
-    await db.delete(sessions).where(inArray(sessions.userId, createdUserIds));
-    await db.delete(signatures).where(inArray(signatures.userId, createdUserIds));
+  const userIds = created.map((row) => row.id);
+
+  if (userIds.length > 0) {
+    await db.delete(emailVerifications).where(inArray(emailVerifications.userId, userIds));
+    await db.delete(passwordResets).where(inArray(passwordResets.userId, userIds));
+    await db.delete(sessions).where(inArray(sessions.userId, userIds));
+    await db.delete(signatures).where(inArray(signatures.userId, userIds));
 
     // Workspaces and canvas rows are created by createUser in the same
     // transaction as the account, so they are looked up by owner instead of
@@ -143,20 +154,59 @@ afterAll(async () => {
     const owned = await db
       .select({ id: workspaces.id })
       .from(workspaces)
-      .where(inArray(workspaces.ownerId, createdUserIds));
-    const ownedIds = owned.map((w) => w.id);
+      .where(inArray(workspaces.ownerId, userIds));
+    const ownedIds = owned.map((row) => row.id);
 
     if (ownedIds.length > 0) {
       await db.delete(canvas).where(inArray(canvas.workspaceId, ownedIds));
       await db.delete(workspaces).where(inArray(workspaces.id, ownedIds));
     }
 
-    await db.delete(profiles).where(inArray(profiles.userId, createdUserIds));
-    await db.delete(users).where(inArray(users.id, createdUserIds));
+    const ownedProfiles = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(inArray(profiles.userId, userIds));
+    const profileIds = ownedProfiles.map((row) => row.id);
+
+    if (profileIds.length > 0) {
+      const ownedDocuments = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(inArray(documents.authorId, profileIds));
+      const documentIds = ownedDocuments.map((row) => row.id);
+
+      if (documentIds.length > 0) {
+        await db.delete(documentLikes).where(inArray(documentLikes.documentId, documentIds));
+        await db.delete(documentBookmarks).where(inArray(documentBookmarks.documentId, documentIds));
+        await db.delete(documentCategories).where(inArray(documentCategories.documentId, documentIds));
+        await db.delete(documentTags).where(inArray(documentTags.documentId, documentIds));
+        await db.delete(documentStyles).where(inArray(documentStyles.documentId, documentIds));
+        await db.delete(documents).where(inArray(documents.id, documentIds));
+      }
+
+      await db.delete(profiles).where(inArray(profiles.id, profileIds));
+    }
+
+    await db.delete(users).where(inArray(users.id, userIds));
   }
-  if (createdEmails.length > 0) {
-    await db.delete(emailQueue).where(inArray(emailQueue.to, createdEmails));
-  }
+
+  await db.delete(emailQueue).where(like(emailQueue.to, `${PREFIX}%`));
+}
+
+beforeAll(async () => {
+  expect(SQL_URL).not.toBe('');
+  app = await buildApp();
+  await app.ready();
+});
+
+afterAll(async () => {
+  await deleteRunRows();
+
+  const leftover = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(like(users.email, `${PREFIX}%`));
+  expect(leftover).toHaveLength(0);
 
   await app.close();
   await sql.end();
@@ -185,9 +235,6 @@ describe('username canonicalization (integration)', () => {
       .where(eq(profiles.userId, row!.id))
       .limit(1);
     expect(profile!.username).toBe(expected);
-
-    createdUserIds.push(row!.id);
-    createdEmails.push(email);
   });
 
   it('rejects a reserved username on register with a field-level message', async () => {
@@ -219,8 +266,6 @@ describe('username canonicalization (integration)', () => {
       salt: null,
       onboardingComplete: false,
     });
-    createdUserIds.push(userId);
-    createdEmails.push(email);
 
     const token = app.jwt.sign(
       { userId, email, role: 'user' },
@@ -254,8 +299,6 @@ describe('username canonicalization (integration)', () => {
       salt: null,
       onboardingComplete: false,
     });
-    createdUserIds.push(userId);
-    createdEmails.push(email);
 
     const token = app.jwt.sign(
       { userId, email, role: 'user' },
@@ -323,8 +366,6 @@ describe('username canonicalization (integration)', () => {
     const { user } = await createUser(email, `  ${expected.toUpperCase()}  `, PASSWORD);
 
     expect(user.username).toBe(expected);
-    createdUserIds.push(user.id);
-    createdEmails.push(email);
 
     const [profile] = await db
       .select()

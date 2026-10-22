@@ -42,7 +42,7 @@ vi.mock('../../src/config/env', async () => {
 });
 
 import postgres from 'postgres';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, like } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
 import { db } from '../../src/db/index';
 import { env } from '../../src/config/env';
@@ -245,41 +245,66 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // Hard delete by the run's own identifiers, children before parents.
-  if (createdDocumentIds.length > 0) {
-    await db.delete(documentLikes).where(inArray(documentLikes.documentId, createdDocumentIds));
-    await db.delete(documentTags).where(inArray(documentTags.documentId, createdDocumentIds));
-    await db.delete(documentCategories).where(inArray(documentCategories.documentId, createdDocumentIds));
-    await db.delete(documentStyles).where(inArray(documentStyles.documentId, createdDocumentIds));
-    await db.delete(documents).where(inArray(documents.id, createdDocumentIds));
+  // Hard delete by the run's own prefix, children before parents.
+  //
+  // The lookup is by prefix and not by the ids collected while the tests ran:
+  // a row created before an assertion blew up never reached a tracking array,
+  // and a single untracked row left behind aborts the whole cleanup on the
+  // first foreign key violation, leaking every row that comes after it.
+  const runUsers = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(like(users.email, `${PREFIX}%`));
+  const userIds = runUsers.map((row) => row.id);
+
+  if (userIds.length > 0) {
+    await db.delete(emailVerifications).where(inArray(emailVerifications.userId, userIds));
+    await db.delete(passwordResets).where(inArray(passwordResets.userId, userIds));
+    await db.delete(sessions).where(inArray(sessions.userId, userIds));
+    await db.delete(signatures).where(inArray(signatures.userId, userIds));
+
+    const owned = await db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(inArray(workspaces.ownerId, userIds));
+    const ownedIds = owned.map((row) => row.id);
+
+    if (ownedIds.length > 0) {
+      await db.delete(canvas).where(inArray(canvas.workspaceId, ownedIds));
+      await db.delete(workspaces).where(inArray(workspaces.id, ownedIds));
+    }
+
+    const ownedProfiles = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(inArray(profiles.userId, userIds));
+    const profileIds = ownedProfiles.map((row) => row.id);
+
+    if (profileIds.length > 0) {
+      const ownedDocuments = await db
+        .select({ id: documents.id })
+        .from(documents)
+        .where(inArray(documents.authorId, profileIds));
+      const documentIds = ownedDocuments.map((row) => row.id);
+
+      if (documentIds.length > 0) {
+        await db.delete(documentLikes).where(inArray(documentLikes.documentId, documentIds));
+        await db.delete(documentTags).where(inArray(documentTags.documentId, documentIds));
+        await db.delete(documentCategories).where(inArray(documentCategories.documentId, documentIds));
+        await db.delete(documentStyles).where(inArray(documentStyles.documentId, documentIds));
+        await db.delete(documents).where(inArray(documents.id, documentIds));
+      }
+
+      await db.delete(profiles).where(inArray(profiles.id, profileIds));
+    }
+
+    await db.delete(users).where(inArray(users.id, userIds));
   }
-  if (createdTagNames.length > 0) {
-    await db.delete(tags).where(inArray(tags.name, createdTagNames));
-  }
-  if (createdCategoryIds.length > 0) {
-    await db.delete(categories).where(inArray(categories.id, createdCategoryIds));
-  }
-  if (createdUserIds.length > 0) {
-    await db.delete(emailVerifications).where(inArray(emailVerifications.userId, createdUserIds));
-    await db.delete(passwordResets).where(inArray(passwordResets.userId, createdUserIds));
-    await db.delete(sessions).where(inArray(sessions.userId, createdUserIds));
-    await db.delete(signatures).where(inArray(signatures.userId, createdUserIds));
-  }
-  if (createdEmails.length > 0) {
-    await db.delete(emailQueue).where(inArray(emailQueue.to, createdEmails));
-  }
-  if (createdCanvasIds.length > 0) {
-    await db.delete(canvas).where(inArray(canvas.id, createdCanvasIds));
-  }
-  if (createdWorkspaceIds.length > 0) {
-    await db.delete(workspaces).where(inArray(workspaces.id, createdWorkspaceIds));
-  }
-  if (createdProfileIds.length > 0) {
-    await db.delete(profiles).where(inArray(profiles.id, createdProfileIds));
-  }
-  if (createdUserIds.length > 0) {
-    await db.delete(users).where(inArray(users.id, createdUserIds));
-  }
+
+  // Categories, tags and queued emails created by the run carry the prefix.
+  await db.delete(categories).where(like(categories.name, `${PREFIX}%`));
+  await db.delete(tags).where(like(tags.name, `${PREFIX}%`));
+  await db.delete(emailQueue).where(like(emailQueue.to, `${PREFIX}%`));
 
   const after = await tableCounts();
   const diff: Record<string, { before: number; after: number }> = {};
@@ -303,6 +328,14 @@ afterAll(async () => {
   expect(await countBy('tags', 'name', createdTagNames)).toBe(0);
   expect(await countBy('categories', 'id', createdCategoryIds)).toBe(0);
 
+  // The prefix is the source of truth for the cleanup, so it is also the
+  // source of truth for the leak check: a row the tracking arrays missed
+  // still has to be gone.
+  expect(await countRows('select count(*)::int as c from users where email like $1', [`${PREFIX}%`])).toBe(0);
+  expect(await countRows('select count(*)::int as c from profiles where username like $1', [`${PREFIX}%`])).toBe(0);
+  expect(await countRows('select count(*)::int as c from categories where name like $1', [`${PREFIX}%`])).toBe(0);
+  expect(await countRows('select count(*)::int as c from tags where name like $1', [`${PREFIX}%`])).toBe(0);
+
   // Global count parity is only meaningful when no other DB-touching suite is
   // writing concurrently, so it is asserted on demand (isolated run).
   if (STRICT_COUNTS) {
@@ -323,6 +356,11 @@ async function countBy(table: string, column: string, values: string[]): Promise
     `select count(*)::int as c from "${table}" where "${column}" = any($1)`,
     [values]
   );
+  return rows[0]!.c as number;
+}
+
+async function countRows(query: string, params: unknown[]): Promise<number> {
+  const rows = await sql.unsafe(query, params);
   return rows[0]!.c as number;
 }
 
