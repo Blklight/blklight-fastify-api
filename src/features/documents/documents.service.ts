@@ -309,18 +309,18 @@ export async function createDocument(
       updatedAt: now,
     };
     await tx.insert(documentStyles).values(newStyle);
-  });
 
-  if (data.categoryId || (data.tags && data.tags.length > 0)) {
-    await db.transaction(async (tx) => {
-      if (data.categoryId) {
-        await setDocumentCategory(documentId, data.categoryId);
-      }
-      if (data.tags && data.tags.length > 0) {
-        await setDocumentTags(documentId, data.tags);
-      }
-    });
-  }
+    // The category and the tags belong to the same unit of work as the
+    // document: an unknown categoryId must not leave a half-created draft
+    // behind, so the whole write rolls back together.
+    if (data.categoryId) {
+      await setDocumentCategory(documentId, data.categoryId, tx);
+    }
+
+    if (data.tags && data.tags.length > 0) {
+      await setDocumentTags(documentId, data.tags, tx);
+    }
+  });
 
   return getDocumentById(documentId, authorId);
 }
@@ -436,24 +436,26 @@ export async function updateDocument(
     if (Object.keys(styleUpdates).length > 1) {
       await tx.update(documentStyles).set(styleUpdates).where(eq(documentStyles.documentId, documentId));
     }
-  });
 
-  if (data.categoryId !== undefined || data.tags !== undefined) {
+    // The category and the tags belong to the same unit of work as the
+    // document fields: an unknown categoryId must not leave the document
+    // half-updated, so the whole write rolls back together.
     if (data.categoryId !== undefined) {
       if (data.categoryId) {
-        await setDocumentCategory(documentId, data.categoryId);
+        await setDocumentCategory(documentId, data.categoryId, tx);
       } else {
-        await removeDocumentCategory(documentId);
+        await removeDocumentCategory(documentId, tx);
       }
     }
+
     if (data.tags !== undefined) {
       if (data.tags.length > 0) {
-        await setDocumentTags(documentId, data.tags);
+        await setDocumentTags(documentId, data.tags, tx);
       } else {
-        await db.delete(documentTags).where(eq(documentTags.documentId, documentId));
+        await tx.delete(documentTags).where(eq(documentTags.documentId, documentId));
       }
     }
-  }
+  });
 
   return getDocumentById(documentId, authorId);
 }

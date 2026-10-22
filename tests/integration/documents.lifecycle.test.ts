@@ -364,6 +364,34 @@ async function countRows(query: string, params: unknown[]): Promise<number> {
   return rows[0]!.c as number;
 }
 
+/**
+ * Count the documents of one author. The integration files share the same
+ * database and run in parallel, so a global count would race with the
+ * documents another file is creating while the assertion runs.
+ */
+async function countDocumentsByAuthor(profileId: string): Promise<number> {
+  const rows = await sql.unsafe('select count(*)::int as c from documents where author_id = $1', [
+    profileId,
+  ]);
+  return rows[0]!.c as number;
+}
+
+async function countStylesByAuthor(profileId: string): Promise<number> {
+  const rows = await sql.unsafe(
+    'select count(*)::int as c from document_styles where document_id in (select id from documents where author_id = $1)',
+    [profileId]
+  );
+  return rows[0]!.c as number;
+}
+
+async function countCategoriesByAuthor(profileId: string): Promise<number> {
+  const rows = await sql.unsafe(
+    'select count(*)::int as c from document_categories where document_id in (select id from documents where author_id = $1)',
+    [profileId]
+  );
+  return rows[0]!.c as number;
+}
+
 describe('document lifecycle (integration)', () => {
   it('rejects unauthenticated create with 401', async () => {
     const res = await api(null, 'POST', '/api/v1/documents', { title: 'nope', type: 'article' });
@@ -907,5 +935,55 @@ describe('slug lifecycle', () => {
     const body = res.json() as ErrorBody;
     expect(body.error.code).toBe('VALIDATION_ERROR');
     expect(body.error.message).toBe('Invalid document type');
+  });
+});
+
+describe('write atomicity', () => {
+  it('rejects a create with an unknown category with 404 and creates no rows', async () => {
+    const account = await createAccount('atcc');
+    const unknownCategoryId = createId();
+    const title = `${PREFIX}Atomic Create`;
+
+    const res = await api(account, 'POST', '/api/v1/documents', {
+      title,
+      type: 'article',
+      content: { type: 'doc', content: [{ type: 'paragraph' }] },
+      categoryId: unknownCategoryId,
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.message).toBe('Category not found');
+
+    // The counts are scoped to this author's rows: the integration files
+    // share the same database and run in parallel, so a global count would
+    // race with the documents another file is creating.
+    expect(await countDocumentsByAuthor(account.profileId)).toBe(0);
+    expect(await countStylesByAuthor(account.profileId)).toBe(0);
+    expect(await countCategoriesByAuthor(account.profileId)).toBe(0);
+  });
+
+  it('leaves the document untouched when an update carries an unknown category', async () => {
+    const account = await createAccount('atcu');
+    const { id } = await createDraft(account, `${PREFIX}Atomic Update`);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}`, {
+      title: `${PREFIX}Atomic Update Renamed`,
+      categoryId: createId(),
+    });
+
+    expect(res.statusCode).toBe(404);
+    const body = res.json() as ErrorBody;
+    expect(body.error.code).toBe('NOT_FOUND');
+    expect(body.error.message).toBe('Category not found');
+
+    expect(await countDocumentsByAuthor(account.profileId)).toBe(1);
+    expect(await countStylesByAuthor(account.profileId)).toBe(1);
+    expect(await countCategoriesByAuthor(account.profileId)).toBe(1);
+
+    const read = await api(account, 'GET', `/api/v1/documents/${id}`);
+    const readBody = read.json() as { data: { title: string } };
+    expect(readBody.data.title).toBe(`${PREFIX}Atomic Update`);
   });
 });

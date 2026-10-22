@@ -1,6 +1,6 @@
 import { eq, and, count, desc } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
-import { db } from '../../db/index';
+import { db, type DbTransaction } from '../../db/index';
 import { tags, documentTags, Tag } from './tags.schema';
 import { ValidationError } from '../../utils/errors';
 
@@ -24,9 +24,10 @@ export function normalizeTag(name: string): string {
 /**
  * Upsert tags by name. Returns existing or newly created Tag records.
  * @param tagNames - Array of raw tag names (will be normalized)
+ * @param tx - Optional transaction to join, so the upsert can be part of a larger unit of work
  * @returns Array of Tag records
  */
-export async function upsertTags(tagNames: string[]): Promise<Tag[]> {
+export async function upsertTags(tagNames: string[], tx?: DbTransaction): Promise<Tag[]> {
   if (tagNames.length === 0) {
     return [];
   }
@@ -37,7 +38,7 @@ export async function upsertTags(tagNames: string[]): Promise<Tag[]> {
   const result: Tag[] = [];
 
   for (const name of uniqueNames) {
-    const [existing] = await db
+    const [existing] = await (tx ?? db)
       .select()
       .from(tags)
       .where(eq(tags.name, name))
@@ -46,7 +47,7 @@ export async function upsertTags(tagNames: string[]): Promise<Tag[]> {
     if (existing) {
       result.push(existing);
     } else {
-      const [created] = await db
+      const [created] = await (tx ?? db)
         .insert(tags)
         .values({
           id: createId(),
@@ -67,28 +68,41 @@ export async function upsertTags(tagNames: string[]): Promise<Tag[]> {
  * Set tags on a document. Replaces all existing tags (delete then insert).
  * @param documentId - Document ID
  * @param tagNames - Array of raw tag names (max 5, will be normalized)
+ * @param tx - Optional transaction to join, so the write can be part of a larger unit of work
+ * @returns Array of Tag records
+ * @throws ValidationError if more than 5 tags are provided
  */
-export async function setDocumentTags(documentId: string, tagNames: string[]): Promise<Tag[]> {
+export async function setDocumentTags(
+  documentId: string,
+  tagNames: string[],
+  tx?: DbTransaction
+): Promise<Tag[]> {
   if (tagNames.length > 5) {
     throw new ValidationError('Maximum 5 tags allowed per document');
   }
 
-  const tagRecords = await upsertTags(tagNames);
+  const tagRecords = await upsertTags(tagNames, tx);
 
-  await db.transaction(async (tx) => {
-    await tx
+  const apply = async (executor: DbTransaction): Promise<void> => {
+    await executor
       .delete(documentTags)
       .where(eq(documentTags.documentId, documentId));
 
     for (const tag of tagRecords) {
-      await tx.insert(documentTags).values({
+      await executor.insert(documentTags).values({
         id: createId(),
         documentId,
         tagId: tag.id,
         createdAt: new Date(),
       });
     }
-  });
+  };
+
+  if (tx) {
+    await apply(tx);
+  } else {
+    await db.transaction(apply);
+  }
 
   return tagRecords;
 }

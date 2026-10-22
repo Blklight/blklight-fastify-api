@@ -1,6 +1,6 @@
 import { eq, and, desc, count } from 'drizzle-orm';
 import { createId } from '@paralleldrive/cuid2';
-import { db } from '../../db/index';
+import { db, type DbTransaction } from '../../db/index';
 import { categories, documentCategories, Category, NewCategory } from './categories.schema';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 
@@ -215,8 +215,19 @@ export async function getCategoryBySlug(slug: string): Promise<CategoryWithChild
  * @param documentId - Document ID
  * @param categoryId - Category ID
  */
-export async function setDocumentCategory(documentId: string, categoryId: string): Promise<void> {
-  const [cat] = await db
+/**
+ * Set the category of a document. Replaces any existing assignment.
+ * @param documentId - Document ID
+ * @param categoryId - Category ID
+ * @param tx - Optional transaction to join, so the write can be part of a larger unit of work
+ * @throws NotFoundError if the category does not exist
+ */
+export async function setDocumentCategory(
+  documentId: string,
+  categoryId: string,
+  tx?: DbTransaction
+): Promise<void> {
+  const [cat] = await (tx ?? db)
     .select()
     .from(categories)
     .where(eq(categories.id, categoryId))
@@ -226,26 +237,34 @@ export async function setDocumentCategory(documentId: string, categoryId: string
     throw new NotFoundError('Category not found');
   }
 
-  await db.transaction(async (tx) => {
-    await tx
+  const apply = async (executor: DbTransaction): Promise<void> => {
+    await executor
       .delete(documentCategories)
       .where(eq(documentCategories.documentId, documentId));
 
-    await tx.insert(documentCategories).values({
+    await executor.insert(documentCategories).values({
       id: createId(),
       documentId,
       categoryId,
       createdAt: new Date(),
     });
-  });
+  };
+
+  if (tx) {
+    await apply(tx);
+    return;
+  }
+
+  await db.transaction(apply);
 }
 
 /**
  * Remove category assignment from a document.
  * @param documentId - Document ID
+ * @param tx - Optional transaction to join, so the write can be part of a larger unit of work
  */
-export async function removeDocumentCategory(documentId: string): Promise<void> {
-  await db
+export async function removeDocumentCategory(documentId: string, tx?: DbTransaction): Promise<void> {
+  await (tx ?? db)
     .delete(documentCategories)
     .where(eq(documentCategories.documentId, documentId));
 }

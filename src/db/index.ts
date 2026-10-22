@@ -14,6 +14,13 @@ const client = postgres(env.DATABASE_URL, {
 });
 export const db = drizzle(client);
 
+/**
+ * The transaction handle handed to a `db.transaction` callback.
+ * Service helpers accept it to join an existing unit of work instead of
+ * opening a nested transaction of their own.
+ */
+export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export async function closeDb(): Promise<void> {
   await client.end();
 }

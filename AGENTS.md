@@ -836,6 +836,8 @@ API docs at http://localhost:3000/docs
 - **Signatures remain accessible after account deletion** — they are permanent proof of authorship
 - **author_id in documents always references profiles.id** — never users.id
 - **documents and document_styles always created in the same transaction**
+- **Category and tags are part of the same transaction as the document write** — an unknown categoryId answers 404 and rolls the whole write back, leaving no document and no style row behind
+- **setDocumentCategory / setDocumentTags / upsertTags / removeDocumentCategory accept an optional tx** — they join the caller's transaction instead of opening one of their own
 - **slug is unique per author** — composite unique constraint on (author_id, slug)
 - **authorship jsonb only set on publish** — null while draft
 - **authorship.hmac enables cryptographic verification** via verifyDocument() from signatures.service.ts
