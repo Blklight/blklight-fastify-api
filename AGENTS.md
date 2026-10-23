@@ -4,8 +4,10 @@ REST API built with Fastify, auth-first, growing into full CRUD capabilities.
 
 ## Current Status
 
-Session 30 complete — rememberMe no login + proteção de rotas admin.
-Future: comments (post-MVP).
+Baseline atual: 136 testes / 0 failed. Último trabalho: vínculo
+documento↔organização mutável após publish, escrita atômica de
+documento/categoria/tags, cleanup dos testes de integração por prefixo e
+DEV recriado a partir do reset. Future: comments (post-MVP).
 
 > Inventário completo de rotas (admin, auth, pública) em `ADMIN_ROUTES.md` (não commitável).
 
@@ -793,12 +795,10 @@ Unique constraint: (follower_id, following_id)
 
 ### Test baseline
 
-`npm test` is **63 passed / 5 failed** as of Session 30. The 5 failures are all in
-`tests/services/documents.service.test.ts` and are pre-existing — they predate the
-refresh-token rotation work and were not touched by it. Treat that count as the
+`npm test` is **136 passed / 0 failed** (14 files). Treat that count as the
 baseline: a change is only a regression if it makes a previously passing test fail.
-`npx tsc --noEmit` likewise has 2 pre-existing `TS2769` errors in `src/app.ts`
-(lines 99 and 112), also unrelated and left as-is.
+`npx tsc --noEmit` still has 2 pre-existing `TS2769` errors in `src/app.ts`
+(lines 108 and 121), also unrelated and left as-is.
 
 `tests/services/session-rotation.test.ts` is the only test that talks to a real
 database. It mocks `src/config/env` and points `DATABASE_URL` at the dev DB, then
