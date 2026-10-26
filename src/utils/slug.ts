@@ -3,13 +3,34 @@ import { ConflictError } from './errors';
 export const MAX_SLUG_ATTEMPTS = 20;
 
 /**
+ * Letters that do not decompose under NFD, so the diacritic strip alone would
+ * erase them. Lowercased before the lookup because the input is lowercased
+ * first.
+ */
+const SPECIAL_LETTERS: Record<string, string> = {
+  ß: 'ss',
+  æ: 'ae',
+  ø: 'o',
+  đ: 'd',
+  ł: 'l',
+};
+
+/**
  * Normalize a free-text name/title into a URL-safe slug.
  * Shared across features that used to copy this logic per-service.
+ *
+ * Accents are transliterated, not dropped: NFD splits "á" into "a" plus a
+ * combining mark, the marks are removed, and letters that do not decompose
+ * (ß, æ, ø, đ, ł) go through an explicit map. Dropping them instead would
+ * turn "pública" into "pblica".
  */
 export function generateSlug(input: string): string {
   return input
     .toLowerCase()
     .trim()
+    .replace(/[ßæøđł]/g, (letter) => SPECIAL_LETTERS[letter] ?? letter)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')

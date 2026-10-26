@@ -923,6 +923,76 @@ describe('slug lifecycle', () => {
     expect(body.data.slug).toBe(slug);
   });
 
+  it('transliterates accents on create instead of dropping them', async () => {
+    const account = await createAccount('slga');
+    const cases: [string, string][] = [
+      [
+        'Do rascunho à leitura pública: o ciclo de vida',
+        'do-rascunho-a-leitura-publica-o-ciclo-de-vida',
+      ],
+      ['Escrever é voltar ao começo', 'escrever-e-voltar-ao-comeco'],
+      ['O primeiro minuto: uma análise', 'o-primeiro-minuto-uma-analise'],
+      ['Ação ç ñ ü straße', 'acao-c-n-u-strasse'],
+    ];
+
+    for (const [title, expected] of cases) {
+      const { slug, res } = await createDraft(account, title);
+      expect(res.statusCode).toBe(201);
+      expect(slug).toBe(expected);
+    }
+  });
+
+  it('suffixes a duplicated accented title with -1', async () => {
+    const account = await createAccount('slgd');
+
+    const first = await createDraft(account, 'Ação ç ñ ü straße');
+    const second = await createDraft(account, 'Ação ç ñ ü straße');
+
+    expect(first.slug).toBe('acao-c-n-u-strasse');
+    expect(second.slug).toBe('acao-c-n-u-strasse-1');
+  });
+
+  it('keeps a symbols-only title deterministic', async () => {
+    const account = await createAccount('slgs');
+
+    const { slug, res } = await createDraft(account, '!!! ???');
+
+    expect(res.statusCode).toBe(201);
+    expect(slug).toBe('-');
+  });
+
+  it('regenerates an accented slug from the new draft title', async () => {
+    const account = await createAccount('slgr2');
+    const { id, slug } = await createDraft(account, 'Escrever é voltar ao começo');
+    expect(slug).toBe('escrever-e-voltar-ao-comeco');
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}`, {
+      title: 'Uma análise pública',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { data: { slug: string } };
+    expect(body.data.slug).toBe('uma-analise-publica');
+  });
+
+  it('keeps an accented slug when the title of a published document changes', async () => {
+    const account = await createAccount('slgp2');
+    const { id, slug } = await createDraft(account, 'Análise pública');
+    expect(slug).toBe('analise-publica');
+
+    const published = await api(account, 'PATCH', `/api/v1/documents/${id}/publish`);
+    expect(published.statusCode).toBe(200);
+
+    const res = await api(account, 'PATCH', `/api/v1/documents/${id}`, {
+      title: 'Começo diferente',
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { data: { title: string; slug: string } };
+    expect(body.data.title).toBe('Começo diferente');
+    expect(body.data.slug).toBe(slug);
+  });
+
   it('rejects an unknown document type on create', async () => {
     const account = await createAccount('slgt');
 
